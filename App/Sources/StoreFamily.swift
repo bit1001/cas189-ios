@@ -262,12 +262,28 @@ extension Store {
                 } else if name.hasSuffix(".cas") {
                     items.append((try CasFile.parse(data: data, fileName: url.lastPathComponent), "cas"))
                 } else if name.hasSuffix(".zip") {
-                    for e in try CasFile.entries(inArchive: url) {
-                        if e.name.lowercased().hasSuffix(".torrent") {
-                            items.append((try CasTorrent.parse(e.data), "torrent"))
-                        } else {
-                            items.append((try CasFile.parse(data: e.data, fileName: e.name), "cas"))
+                    // 凭证包里只认 .cas / .torrent，其他条目（readme、视频、__MACOSX…）直接跳过；
+                    // 单个条目坏了也不该让整包失败。
+                    let entries = try CasFile.entries(inArchive: url)
+                    var used = 0
+                    for e in entries {
+                        let inner = e.name.lowercased()
+                        do {
+                            if inner.hasSuffix(".torrent") {
+                                items.append((try CasTorrent.parse(e.data), "torrent"))
+                                used += 1
+                            } else if inner.hasSuffix(".cas") {
+                                items.append((try CasFile.parse(data: e.data, fileName: e.name), "cas"))
+                                used += 1
+                            } else {
+                                append("  zip 内跳过 \(e.name)")
+                            }
+                        } catch {
+                            append("  \(e.name) 解析失败：\(error.localizedDescription)")
                         }
+                    }
+                    if used == 0 {
+                        append("\(url.lastPathComponent) 里没有 .cas / .torrent（普通压缩包不能秒传）")
                     }
                 } else {
                     append("跳过 \(url.lastPathComponent)（不是 .cas / .torrent / .zip）")

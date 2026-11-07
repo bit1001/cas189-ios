@@ -45,6 +45,29 @@ struct TransferView: View {
         }
     }
 
+    /// 进程内的文档浏览器，用于 document picker 取不到结果的环境
+    private func pickWithBrowser(mode chosen: ImporterMode) {
+        store.append("正在打开文件浏览器…")
+        DocumentBrowserCoordinator.pick(
+            allowsMultiple: true,
+            log: { message in Task { @MainActor in store.append(message) } }
+        ) { urls in
+            Task { @MainActor in
+                guard !urls.isEmpty else {
+                    store.append("文件浏览器没有返回文件")
+                    return
+                }
+                store.append("已选择 \(urls.count) 个文件：\(urls.prefix(3).map(\.lastPathComponent).joined(separator: ", "))")
+                switch chosen {
+                case .upload:
+                    await store.uploadTo(urls, space: targetSpace, folderId: targetFolderId)
+                case .credentials:
+                    await store.importCredentialsTo(urls, space: targetSpace, folderId: targetFolderId)
+                }
+            }
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -88,6 +111,11 @@ struct TransferView: View {
                     } label: {
                         Label("导入秒传凭证（.cas / .torrent / .zip）", systemImage: "shippingbox")
                     }
+                    Button {
+                        pickWithBrowser(mode: .credentials)
+                    } label: {
+                        Label("用文件浏览器选择（兼容模式）", systemImage: "folder.badge.questionmark")
+                    }
                 } header: {
                     Text("上传 / 秒传")
                 } footer: {
@@ -119,14 +147,15 @@ struct TransferView: View {
                 Section {
                     Button {
                         localFiles = LocalFiles.list()
-                        store.append("App 文件夹里 \(localFiles.count) 个文件")
+                        let usable = localFiles.filter { LocalFiles.isSupported($0) }.count
+                        store.append("App 文件夹：\(localFiles.count) 个文件，其中 \(usable) 个可导入")
                     } label: {
                         Label("刷新 App 文件夹", systemImage: "arrow.clockwise")
                     }
                     if localFiles.isEmpty {
                         Text("还没有文件").foregroundStyle(.secondary).font(.caption)
                     }
-                    ForEach(localFiles, id: \.self) { url in
+                    ForEach(localFiles.filter { LocalFiles.isSupported($0) }, id: \.self) { url in
                         Button {
                             Task {
                                 await store.importCredentialsTo([url], space: targetSpace, folderId: targetFolderId)
