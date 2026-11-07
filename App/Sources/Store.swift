@@ -16,6 +16,7 @@ final class Store: ObservableObject {
     @Published var isSearching = false
     @Published var errorText: String?
     @Published var lastShareText: String?
+    @Published var needsRelogin = false
 
     let client: Cloud189Client
 
@@ -195,4 +196,45 @@ final class Store: ObservableObject {
             append("创建分享失败：\(error.localizedDescription)")
         }
     }
+
+    // MARK: - 批量上传
+
+    func uploadMany(_ urls: [URL]) async {
+        guard !urls.isEmpty else { return }
+        busy = true; errorText = nil
+        defer { busy = false; uploadProgress = 0; uploadLabel = "" }
+        var ok = 0
+        for (index, url) in urls.enumerated() {
+            uploadLabel = "[\(index + 1)/\(urls.count)] \(url.lastPathComponent)"
+            let access = url.startAccessingSecurityScopedResource()
+            defer { if access { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let r = try await client.uploadFile(at: url,
+                                                   name: url.lastPathComponent,
+                                                   parentFolderId: folderId)
+                if r.ok { ok += 1 }
+                append("\(url.lastPathComponent) → \(r.ok ? "成功" : "失败")")
+            } catch {
+                append("\(url.lastPathComponent) 失败：\(error.localizedDescription)")
+                if isSessionExpired(error) { needsRelogin = true; break }
+            }
+        }
+        append("批量完成 \(ok)/\(urls.count)")
+        await load(folderId)
+    }
+
+    func isSessionExpired(_ error: Error) -> Bool {
+        if case CASError.sessionExpired = error { return true }
+        let text = error.localizedDescription
+        return text.contains("登录") || text.contains("session") || text.contains("SessionKey")
+    }
+
+    func relogin() {
+        needsRelogin = false
+        SessionStore.clear()
+        session = Session()
+        entries = []
+    }
+
+    func clearShare() { lastShareText = nil }
 }

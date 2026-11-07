@@ -1,3 +1,4 @@
+import UIKit
 import SwiftUI
 import UniformTypeIdentifiers
 import CAS189Core
@@ -146,6 +147,9 @@ struct ContentView: View {
                             }
                         }
                         .swipeActions(edge: .trailing) {
+                            Button {
+                                Task { await store.createShare(for: entry) }
+                            } label: { Label("创建分享链接", systemImage: "square.and.arrow.up") }
                             Button(role: .destructive) {
                                 Task { await store.delete(entry) }
                             } label: { Label("删除", systemImage: "trash") }
@@ -155,6 +159,9 @@ struct ContentView: View {
                                 renameTarget = entry
                                 renameText = entry.name
                             } label: { Label("重命名", systemImage: "pencil") }
+                            Button {
+                                Task { await store.createShare(for: entry) }
+                            } label: { Label("创建分享链接", systemImage: "square.and.arrow.up") }
                             Button(role: .destructive) {
                                 Task { await store.delete(entry) }
                             } label: { Label("删除", systemImage: "trash") }
@@ -197,6 +204,27 @@ struct ContentView: View {
                     renameTarget = nil
                 }
             }
+            .alert("分享链接", isPresented: Binding(
+                get: { store.lastShareText != nil },
+                set: { if !$0 { store.clearShare() } }
+            )) {
+                Button("复制") {
+                    UIPasteboard.general.string = store.lastShareText ?? ""
+                    store.clearShare()
+                }
+                Button("关闭", role: .cancel) { store.clearShare() }
+            } message: {
+                Text(store.lastShareText ?? "")
+            }
+            .alert("登录已过期", isPresented: $store.needsRelogin) {
+                Button("重新登录") {
+                    store.relogin()
+                    showLogin = true
+                }
+                Button("稍后", role: .cancel) { store.needsRelogin = false }
+            } message: {
+                Text("天翼云盘会话失效，请重新登录后重试。")
+            }
             .alert("新建文件夹", isPresented: $showNewFolder) {
                 TextField("名字", text: $newFolderName)
                 Button("取消", role: .cancel) { }
@@ -205,10 +233,14 @@ struct ContentView: View {
                 }
             }
         }
-        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.item]) { result in
+        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             switch result {
-            case let .success(url):
-                Task { await store.rapidUpload(url: url) }
+            case let .success(urls):
+                if urls.count == 1 {
+                    Task { await store.rapidUpload(url: urls[0]) }
+                } else if !urls.isEmpty {
+                    Task { await store.uploadMany(urls) }
+                }
             case let .failure(error):
                 store.errorText = error.localizedDescription
             }
