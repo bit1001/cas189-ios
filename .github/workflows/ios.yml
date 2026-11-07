@@ -54,3 +54,45 @@ jobs:
           name: CAS189-simulator-app
           path: artifacts
           if-no-files-found: warn
+
+  # 3) 真机 arm64 未签名 .ipa（TrollStore 直接装 / Sideloadly 会重签）
+  build-ipa:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: App
+        run: xcodegen generate
+
+      - name: Build for device (unsigned)
+        run: |
+          xcodebuild \
+            -project App/CAS189.xcodeproj \
+            -scheme CAS189 \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "CAS189.app" | head -1)
+          echo "APP=$APP"
+          test -n "$APP"
+          rm -rf Payload CAS189-unsigned.ipa
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry CAS189-unsigned.ipa Payload
+          ls -lh CAS189-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CAS189-unsigned-ipa
+          path: CAS189-unsigned.ipa
