@@ -34,7 +34,19 @@ public enum CasFile {
            data[data.startIndex + 1] == 0xBB, data[data.startIndex + 2] == 0xBF {
             data = data.subdata(in: (data.startIndex + 3)..<data.endIndex)
         }
-        guard let any = try? JSONSerialization.jsonObject(with: data,
+        // 有些工具导出的 .cas 是 Base64(JSON)，甚至 Base64(Base64(JSON))
+        var decoded = data
+        for _ in 0..<3 {
+            guard decoded.first != UInt8(ascii: "{"),
+                  let text = String(data: decoded, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty,
+                  let raw = decodeBase64(text),
+                  raw.first == UInt8(ascii: "{") else { break }
+            decoded = raw
+        }
+
+        guard let any = try? JSONSerialization.jsonObject(with: decoded,
                                                          options: [.fragmentsAllowed]) else {
             throw FormatError(message: "不是 JSON（开头：\(preview(data))）")
         }
@@ -106,6 +118,20 @@ public enum CasFile {
             obj["slice_md5s"] = item.parts.map { $0.uppercased() }
         }
         return (try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])) ?? Data()
+    }
+
+    /// 宽松 Base64 解码：容忍换行、空白、缺省 padding、URL-safe 字符
+    static func decodeBase64(_ text: String) -> Data? {
+        var s = text.replacingOccurrences(of: "\n", with: "")
+            .replacingOccurrences(of: "\r", with: "")
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        // 只允许 base64 字符，避免把普通文本误判
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
+        guard s.unicodeScalars.allSatisfy({ allowed.contains($0) }) else { return nil }
+        while s.count % 4 != 0 { s += "=" }
+        return Data(base64Encoded: s)
     }
 
     /// 出错时把内容开头带进错误信息，方便判断到底是哪种格式

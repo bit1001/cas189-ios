@@ -111,6 +111,18 @@ final class CasFileTests: XCTestCase {
                           "错误信息应包含内容预览，实际：\(error.localizedDescription)")
         }
     }
+
+    /// Base64(JSON) 形式的 .cas（实测来自「The Scandal」凭证包）
+    func testParseBase64WrappedJSON() throws {
+        let inner = #"{"name":"a.mkv","size":6523591955,"md5":"EA48540AD707F5669E250E1C4FF7A791","sliceMd5":"7C3680CAF37D082DC054AEB6A67BDD42","create_time":"1793859645"}"#
+        let text = Data(inner.utf8).base64EncodedString()
+        let item = try CasFile.parse(data: Data(text.utf8))
+        XCTAssertEqual(item.name, "a.mkv")
+        XCTAssertEqual(item.size, 6523591955)
+        XCTAssertEqual(item.fileMd5, "EA48540AD707F5669E250E1C4FF7A791")
+        XCTAssertEqual(item.sliceMd5, "7C3680CAF37D082DC054AEB6A67BDD42")
+        XCTAssertEqual(item.sliceSize, 10485760)
+    }
 }
 
 final class ThumbnailTests: XCTestCase {
