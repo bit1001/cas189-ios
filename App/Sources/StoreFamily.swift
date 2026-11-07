@@ -37,6 +37,12 @@ extension Store {
         }
     }
 
+    /// 任何界面要用家庭云之前调用：没取过 familyId 就先取
+    func ensureFamilyReady() async {
+        guard session.isLoggedIn else { return }
+        if familyId.isEmpty { await loadFamilyRoot() }
+    }
+
     func loadFamily(_ folder: String) async {
         guard !familyId.isEmpty else {
             await loadFamilyRoot()
@@ -249,14 +255,17 @@ extension Store {
     // MARK: 家庭云秒传（凭证导入）
 
     /// 解析 .cas / .cas.torrent / .cas.zip → CasItem
-    private func parseCredentials(_ urls: [URL]) -> [(item: CasItem, kind: String)] {
-        var items: [(CasItem, String)] = []
+    private func parseCredentials(_ urls: [URL]) -> [(item: CasItem, kind: String, bundle: String?)] {
+        var items: [(CasItem, String, String?)] = []
         for url in urls {
             let access = url.startAccessingSecurityScopedResource()
             defer { if access { url.stopAccessingSecurityScopedResource() } }
             let lower = url.lastPathComponent.lowercased()
             do {
                 let data = try Data(contentsOf: url)
+                // zip 内的凭证统一放进「与 zip 同名」的文件夹
+                let bundleName: String? = lower.hasSuffix(".zip")
+                    ? zipFolderName(url.lastPathComponent) : nil
                 if lower.hasSuffix(".zip") {
                     // 凭证包就是普通 .zip：里面可能装多个 .cas，也可能不带 .cas 后缀。
                     // 按「逐个条目当 .cas 解析」处理，坏的条目跳过不影响其他。
@@ -266,13 +275,13 @@ extension Store {
                         let inner = e.name.lowercased()
                         if inner.hasSuffix(".torrent") {
                             if let item = try? CasTorrent.parse(e.data) {
-                                items.append((item, "torrent")); used += 1
+                                items.append((item, "torrent", bundleName)); used += 1
                             } else {
                                 append("  zip 内 \(e.name) 不是合法种子，跳过")
                             }
                         } else {
                             do {
-                                items.append((try CasFile.parse(data: e.data, fileName: e.name), "cas"))
+                                items.append((try CasFile.parse(data: e.data, fileName: e.name), "cas", bundleName))
                                 used += 1
                             } catch {
                                 append("  \(e.name)：\(error.localizedDescription)")
@@ -284,11 +293,11 @@ extension Store {
                         append("  这个压缩包里没有 .cas 凭证，不能秒传")
                     }
                 } else if lower.hasSuffix(".torrent") {
-                    items.append((try CasTorrent.parse(data), "torrent"))
+                    items.append((try CasTorrent.parse(data), "torrent", nil))
                 } else {
                     // 没后缀 / 后缀不标准也按 .cas 试一次（选了「导入秒传」就应该当凭证处理）
                     do {
-                        items.append((try CasFile.parse(data: data, fileName: url.lastPathComponent), "cas"))
+                        items.append((try CasFile.parse(data: data, fileName: url.lastPathComponent), "cas", nil))
                     } catch {
                         append("跳过 \(url.lastPathComponent)：\(error.localizedDescription)")
                     }
@@ -435,16 +444,27 @@ extension Store {
             return
         }
         var ok = 0
+        var currentFolder = folderId
+        var currentBundle: String?
         for (index, pair) in items.enumerated() {
             uploadLabel = "[\(index + 1)/\(items.count)] \(pair.item.name)"
             do {
+                // 换包了：在目标目录下建一个与 zip 同名的文件夹
+                if pair.bundle != currentBundle {
+                    currentBundle = pair.bundle
+                    if let name = pair.bundle {
+                        currentFolder = try await ensureFolder(named: name, space: space, parent: folderId)
+                    } else {
+                        currentFolder = folderId
+                    }
+                }
                 let r: RapidResult
                 if space == .personal {
-                    r = try await client.rapidUpload(pair.item, parentFolderId: folderId)
+                    r = try await client.rapidUpload(pair.item, parentFolderId: currentFolder)
                 } else {
                     guard !familyId.isEmpty else { throw CASError.missing("未连接家庭云") }
                     r = try await client.familyRapidUpload(pair.item, familyId: familyId,
-                                                           parentFolderId: folderId)
+                                                           parentFolderId: currentFolder)
                 }
                 if r.ok { ok += 1 }
                 append("\(pair.item.name)（\(pair.kind)）→ \(r.ok ? "秒传成功" : "未命中：\(r.message)")")
@@ -455,6 +475,35 @@ extension Store {
         }
         append("凭证秒传 \(ok)/\(items.count)")
         await refresh(space: space, target: folderId)
+    }
+
+
+    /// zip 文件名 → 文件夹名：`挑情丑闻.zip` → `挑情丑闻`
+    private func zipFolderName(_ fileName: String) -> String {
+        var name = fileName
+        if name.lowercased().hasSuffix(".zip") { name = String(name.dropLast(4)) }
+        if name.lowercased().hasSuffix(".cas") { name = String(name.dropLast(4)) }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "秒传导入" : trimmed
+    }
+
+    /// 目标目录下按名字找文件夹，没有就建一个；返回 folderId
+    private func ensureFolder(named name: String, space: CloudSpace, parent: String) async throws -> String {
+        if space == .family && familyId.isEmpty { await loadFamilyRoot() }
+        let siblings = try await client.entries(space: space.key, folderId: parent, familyId: familyId)
+        if let hit = siblings.first(where: { $0.isFolder && $0.name == name }) {
+            append("使用已有文件夹「\(name)」")
+            return hit.id
+        }
+        let id: String
+        if space == .personal {
+            id = try await client.createFolder(name: name, parentId: parent)
+        } else {
+            guard !familyId.isEmpty else { throw CASError.missing("未连接家庭云") }
+            id = try await client.familyMkdir(name: name, familyId: familyId, parentFolderId: parent)
+        }
+        append("已创建文件夹「\(name)」→ 秒传到该目录")
+        return id
     }
 
     /// 分享转存到指定位置（目前仅个人云支持）

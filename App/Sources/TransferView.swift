@@ -239,6 +239,9 @@ struct TransferView: View {
             }
             .onAppear {
                 localFiles = LocalFiles.list()
+                if targetSpace == .family {
+                    Task { await store.ensureFamilyReady() }
+                }
             }
             .sheet(isPresented: $showFolderPicker) {
                 FolderPickerView(space: targetSpace) { id, name in
@@ -332,6 +335,8 @@ struct FolderPickerView: View {
         errorText = nil
         defer { loading = false }
         do {
+            // 家庭云要先拿到 familyId，否则接口返回空/报错
+            if space == .family { await store.ensureFamilyReady() }
             entries = try await store.listForPicker(space: space, folderId: folderId)
         } catch {
             errorText = error.localizedDescription
