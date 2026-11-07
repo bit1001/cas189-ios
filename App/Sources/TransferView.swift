@@ -25,7 +25,10 @@ struct TransferView: View {
     /// 走 UIKit 原生选择器：SwiftUI 的 .fileImporter 在这台设备上完全不回调
     private func pickFiles(mode chosen: ImporterMode) {
         store.append("正在打开文件选择器…")
-        DocumentPickerCoordinator.pickFiles(allowsMultiple: true) { urls in
+        DocumentPickerCoordinator.pickFiles(
+            allowsMultiple: true,
+            log: { message in Task { @MainActor in store.append(message) } }
+        ) { urls in
             Task { @MainActor in
                 guard !urls.isEmpty else {
                     store.append("已取消选择")
