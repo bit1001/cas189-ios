@@ -1,0 +1,53 @@
+name: iOS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # 1) 核心包：Linux 跑单测（便宜、快）
+  core-tests:
+    runs-on: ubuntu-latest
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift test
+        run: swift test --parallel
+
+  # 2) App：macOS 上生成工程并编译（不签名）
+  build-app:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: App
+        run: xcodegen generate
+
+      - name: Build (unsigned, simulator)
+        run: |
+          xcodebuild \
+            -project App/CAS189.xcodeproj \
+            -scheme CAS189 \
+            -configuration Release \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Collect app bundle
+        run: |
+          APP=$(find build/Build/Products -name "CAS189.app" -maxdepth 3 | head -1)
+          echo "APP=$APP"
+          mkdir -p artifacts
+          if [ -n "$APP" ]; then cp -R "$APP" artifacts/; fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CAS189-simulator-app
+          path: artifacts
+          if-no-files-found: warn
