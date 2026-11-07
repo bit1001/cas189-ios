@@ -25,7 +25,8 @@ public enum WebListParser {
             guard let id = f["id"], let name = f["name"], !id.isEmpty else { continue }
             let size = Int64(f["size"] ?? "0") ?? 0
             out.append(CloudEntry(id: id, name: name, size: size, isFolder: false,
-                                  md5: f["md5"], parentId: f["parentId"] ?? "-11"))
+                                  md5: f["md5"], parentId: f["parentId"] ?? "-11",
+                                  iconURL: f["smallUrl"]))
         }
         return out
     }

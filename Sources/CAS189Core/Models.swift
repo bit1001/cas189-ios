@@ -7,6 +7,19 @@ public struct CloudEntry: Identifiable, Sendable, Equatable {
     public let isFolder: Bool
     public let md5: String?
     public let parentId: String?
+    /// 缩略图直链（listFiles 带 iconOption=5 时返回，可直接 GET，无需 Cookie）
+    public let iconURL: String?
+
+    public init(id: String, name: String, size: Int64, isFolder: Bool,
+                md5: String? = nil, parentId: String? = nil, iconURL: String? = nil) {
+        self.id = id
+        self.name = name
+        self.size = size
+        self.isFolder = isFolder
+        self.md5 = md5
+        self.parentId = parentId
+        self.iconURL = iconURL
+    }
 }
 
 public struct CloudFolder: Identifiable, Sendable, Equatable {

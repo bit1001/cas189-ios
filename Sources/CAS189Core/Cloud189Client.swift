@@ -223,7 +223,8 @@ public actor Cloud189Client {
             ("pageSize", String(pageSize)),
             ("pageNum", "1"),
             ("folderId", folderId),
-            ("mediaType", "0")
+            ("mediaType", "0"),
+            ("iconOption", "5")
         ])
         // PC 网页接口固定返回 XML
         return try WebListParser.parse(data)

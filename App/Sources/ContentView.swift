@@ -133,8 +133,21 @@ struct ContentView: View {
                 Section(store.searchText.isEmpty ? "目录（\(store.folderId)）" : "搜索结果（\(store.searchResults.count)）") {
                     ForEach(store.searchText.isEmpty ? store.entries : store.searchResults) { entry in
                         HStack {
-                            Image(systemName: entry.isFolder ? "folder" : "doc")
-                                .foregroundStyle(entry.isFolder ? .blue : .secondary)
+                            if let icon = entry.iconURL, let url = URL(string: icon) {
+                                AsyncImage(url: url) { phase in
+                                    switch phase {
+                                    case let .success(img):
+                                        img.resizable().scaledToFill()
+                                    default:
+                                        Color.secondary.opacity(0.15)
+                                    }
+                                }
+                                .frame(width: 40, height: 40)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                            } else {
+                                Image(systemName: entry.isFolder ? "folder" : "doc")
+                                    .foregroundStyle(entry.isFolder ? .blue : .secondary)
+                            }
                             VStack(alignment: .leading) {
                                 Text(entry.name).lineLimit(1)
                                 if !entry.isFolder {

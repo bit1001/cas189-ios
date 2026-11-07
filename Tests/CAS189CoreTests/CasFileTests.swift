@@ -71,3 +71,27 @@ final class CasFileTests: XCTestCase {
         XCTAssertEqual(CasFile.stripCasName("movie.mkv.cas"), "movie.mkv")
     }
 }
+
+final class ThumbnailTests: XCTestCase {
+    func testParseIconFromListXML() throws {
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <listFiles><fileList><count>1</count><file>
+        <id>123</id><name>a.mp4</name><size>100</size><md5>ABC</md5>
+        <icon><smallUrl>https://preview.cloud.189.cn/image/imageAction?param=AAA</smallUrl>
+        <largeUrl>https://preview.cloud.189.cn/image/imageAction?param=BBB</largeUrl></icon>
+        </file></fileList></listFiles>
+        """.data(using: .utf8)!
+        let entries = try WebListParser.parse(xml)
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries[0].iconURL, "https://preview.cloud.189.cn/image/imageAction?param=AAA")
+    }
+
+    func testNoIconStaysNil() throws {
+        let xml = """
+        <listFiles><fileList><count>1</count><file>
+        <id>456</id><name>b.iso</name><size>1</size></file></fileList></listFiles>
+        """.data(using: .utf8)!
+        XCTAssertNil(try WebListParser.parse(xml)[0].iconURL)
+    }
+}

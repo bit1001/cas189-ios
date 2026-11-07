@@ -99,7 +99,7 @@ case "ls":
         let entries = try await client.listEntries(folderId: folder)
         print("目录 \(folder) 共 \(entries.count) 项：")
         for e in entries.prefix(100) {
-            let kind = e.isFolder ? "📁" : "📄"
+            let kind = e.isFolder ? "📁" : (e.iconURL != nil ? "🖼" : "📄")
             print("  \(kind) \(e.name)  [\(human(e.size))]  id=\(e.id)")
         }
     } catch {
