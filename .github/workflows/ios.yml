@@ -20,7 +20,7 @@ jobs:
 
   # 2) App：macOS 上生成工程并编译（不签名）
   build-app:
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -57,7 +57,7 @@ jobs:
 
   # 3) 真机 arm64 未签名 .ipa（TrollStore 直接装 / Sideloadly 会重签）
   build-ipa:
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
