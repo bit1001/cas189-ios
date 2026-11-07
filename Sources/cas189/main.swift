@@ -151,6 +151,30 @@ case "search":
         print("  \(e.isFolder ? "📁" : "📄") \(e.name)  [\(human(e.size))]  id=\(e.id)")
     }
 
+case "share":
+    guard let id = arg("--id") else { die("用法: cas189 share --id <fileId> [--type 1] [--days 7]") }
+    let client = try await authed()
+    do {
+        let link = try await client.createShare(
+            fileId: id,
+            shareType: arg("--type").flatMap(Int.init),
+            expireDays: arg("--days").flatMap(Int.init)
+        )
+        print("✓ 分享已创建")
+        print("  链接: \(link.url)")
+        print("  提取码: \(link.accessCode.isEmpty ? "无（公开）" : link.accessCode)")
+        print("  文案: \(link.shareText)")
+    } catch { die(error.localizedDescription) }
+
+case "parse-share":
+    guard let text = arg("--text") else { die("用法: cas189 parse-share --text \"<含分享链接的文本>\"") }
+    if let r = Cloud189Client.extractShareLink(from: text) {
+        print("shareCode: \(r.code)")
+        print("accessCode: \(r.accessCode ?? "未识别")")
+    } else {
+        print("未识别到 189 分享链接")
+    }
+
 case "raw":
     // 调试用：直接打一个签名接口，把原始 JSON 打出来
     guard let uri = arg("--uri") else { die("用法: cas189 raw --uri /person/xxx [--params a=1&b=2]") }
@@ -208,5 +232,7 @@ default:
       swift run cas189 rename --id <id> --name <新名>       重命名
       swift run cas189 mkdir --name <名字> [--folder -11]   新建文件夹
       swift run cas189 search --keyword <关键词>            递归搜索
+      swift run cas189 share --id <fileId> [--type 1] [--days 7]  创建分享链接
+      swift run cas189 parse-share --text "<文本>"          从文本提取分享链接和提取码
     """)
 }
