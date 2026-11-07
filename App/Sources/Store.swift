@@ -19,6 +19,11 @@ final class Store: ObservableObject {
     @Published var downloadLabel = ""
     @Published var downloadedFile: URL?
     @Published var needsRelogin = false
+    // 家庭云
+    @Published var familyId = ""
+    @Published var familyEntries: [CloudEntry] = []
+    @Published var familyFolderId = "-11"
+    @Published var familyBusy = false
 
     let client: Cloud189Client
 

@@ -28,11 +28,15 @@ struct ContentView: View {
     @State private var renameText = ""
     @State private var showNewFolder = false
     @State private var newFolderName = ""
+    @State private var showShareImport = false
+    @State private var shareInput = ""
+    @State private var showCredentialImporter = false
 
     var body: some View {
         TabView(selection: $tab) {
             loginTab.tabItem { Label("登录", systemImage: "person.crop.circle") }.tag(0)
             browserTab.tabItem { Label("云盘", systemImage: "cloud") }.tag(1)
+            FamilyView().tabItem { Label("家庭云", systemImage: "person.2") }.tag(3)
             logTab.tabItem { Label("日志", systemImage: "doc.text") }.tag(2)
         }
         .overlay(alignment: .top) {
@@ -204,6 +208,17 @@ struct ContentView: View {
                         showNewFolder = true
                     } label: { Image(systemName: "folder.badge.plus") }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            shareInput = ""
+                            showShareImport = true
+                        } label: { Label("转存别人的分享", systemImage: "arrow.down.left.square") }
+                        Button {
+                            showCredentialImporter = true
+                        } label: { Label("导入秒传凭证", systemImage: "doc.badge.arrow.up") }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                }
             }
             .refreshable { await store.load(store.folderId) }
             .searchable(text: $store.searchText, prompt: "搜索云盘（递归 3 层）")
@@ -255,6 +270,44 @@ struct ContentView: View {
                 Button("稍后", role: .cancel) { store.needsRelogin = false }
             } message: {
                 Text("天翼云盘会话失效，请重新登录后重试。")
+            }
+            .sheet(isPresented: $showShareImport) {
+                NavigationStack {
+                    Form {
+                        Section {
+                            TextField("https://cloud.189.cn/t/xxxx 提取码：abcd",
+                                      text: $shareInput, axis: .vertical)
+                                .lineLimit(2...4)
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                        } header: {
+                            Text("分享链接")
+                        } footer: {
+                            Text("直接粘贴整段分享文案即可，会自动识别提取码。转存到当前目录「\(store.folderId)」。")
+                        }
+                        Section {
+                            Button("开始转存") {
+                                let text = shareInput
+                                showShareImport = false
+                                Task { await store.importShare(text) }
+                            }
+                            .disabled(shareInput.isEmpty || store.busy)
+                        }
+                    }
+                    .navigationTitle("转存分享")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("关闭") { showShareImport = false }
+                        }
+                    }
+                }
+            }
+            .fileImporter(isPresented: $showCredentialImporter,
+                          allowedContentTypes: [.item],
+                          allowsMultipleSelection: true) { result in
+                if case let .success(urls) = result, !urls.isEmpty {
+                    Task { await store.importCredentials(urls) }
+                }
             }
             .alert("新建文件夹", isPresented: $showNewFolder) {
                 TextField("名字", text: $newFolderName)
