@@ -23,7 +23,7 @@ final class DocumentBrowserCoordinator: NSObject, UIDocumentBrowserViewControlle
         coordinator.finished = false
         shared = coordinator
 
-        let browser = UIDocumentBrowserViewController(forOpeningFilesWithContentTypes: [UTType.item])
+        let browser = UIDocumentBrowserViewController(forOpeningFilesWithContentTypes: [UTType.item.identifier])
         browser.allowsDocumentCreation = false
         browser.allowsPickingMultipleItems = allowsMultiple
         browser.delegate = coordinator
