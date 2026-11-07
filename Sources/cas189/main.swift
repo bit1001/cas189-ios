@@ -175,6 +175,46 @@ case "parse-share":
         print("未识别到 189 分享链接")
     }
 
+case "make-torrent":
+    guard let path = arg("--file") else { die("用法: cas189 make-torrent --file <本地文件> [--out <输出路径>]") }
+    let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    do {
+        let data = try CasTorrent.build(fromFile: url)
+        let outPath = arg("--out") ?? (url.path + ".cas.torrent")
+        try data.write(to: URL(fileURLWithPath: outPath))
+        let item = try CasTorrent.parse(data)
+        print("✓ 已生成 \(outPath)（\(data.count) 字节）")
+        print("  文件: \(item.name)  \(item.size) 字节")
+        print("  fileMd5:  \(item.fileMd5)")
+        print("  sliceMd5: \(item.sliceMd5)")
+        print("  分片数: \(item.parts.count)")
+    } catch { die(error.localizedDescription) }
+
+case "torrent-info":
+    guard let path = arg("--file") else { die("用法: cas189 torrent-info --file <x.cas.torrent>") }
+    do {
+        let data = try Data(contentsOf: URL(fileURLWithPath: (path as NSString).expandingTildeInPath))
+        let item = try CasTorrent.parse(data)
+        print("名称:     \(item.name)")
+        print("大小:     \(item.size)")
+        print("fileMd5:  \(item.fileMd5)")
+        print("sliceMd5: \(item.sliceMd5)")
+        print("sliceSize:\(item.sliceSize)")
+        print("分片数:   \(item.parts.count)")
+        if !item.parts.isEmpty { print("前两片:   \(item.parts.prefix(2).joined(separator: ", "))") }
+    } catch { die(error.localizedDescription) }
+
+case "rapid-torrent":
+    guard let path = arg("--file") else { die("用法: cas189 rapid-torrent --file <x.cas.torrent> [--folder -11]") }
+    do {
+        let data = try Data(contentsOf: URL(fileURLWithPath: (path as NSString).expandingTildeInPath))
+        let item = try CasTorrent.parse(data)
+        print("种子: \(item.name)  \(item.size) 字节  \(item.parts.count) 片")
+        let client = try await authed()
+        let r = try await client.rapidUpload(item, parentFolderId: arg("--folder") ?? "-11")
+        print(r.ok ? "✓ 秒传成功（未上传任何字节）" : "✗ 未命中：\(r.message)")
+    } catch { die(error.localizedDescription) }
+
 case "raw":
     // 调试用：直接打一个签名接口，把原始 JSON 打出来
     guard let uri = arg("--uri") else { die("用法: cas189 raw --uri /person/xxx [--params a=1&b=2]") }
@@ -234,5 +274,8 @@ default:
       swift run cas189 search --keyword <关键词>            递归搜索
       swift run cas189 share --id <fileId> [--type 1] [--days 7]  创建分享链接
       swift run cas189 parse-share --text "<文本>"          从文本提取分享链接和提取码
+      swift run cas189 make-torrent --file <文件>           生成本地 .cas.torrent
+      swift run cas189 torrent-info --file <种子>           查看种子里的指纹
+      swift run cas189 rapid-torrent --file <种子>          只凭种子秒传（不读本地文件）
     """)
 }
