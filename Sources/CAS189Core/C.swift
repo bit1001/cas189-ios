@@ -13,6 +13,8 @@ public enum C {
     public static let sliceSize = 10 * 1024 * 1024
 
     public static let webURL = "https://cloud.189.cn"
+    /// PC 登录入口（redirect 回主页面，登录成功即带 COOKIE_LOGIN_USER）
+    public static let loginEntryURL = "https://cloud.189.cn/api/portal/loginUrl.action?redirectURL=https%3A%2F%2Fcloud.189.cn%2Fweb%2Fmain.html"
     public static let apiURL = "https://api.cloud.189.cn"
     /// 注意：秒传/上传签名接口打在 upload 子域，不是 api 子域
     public static let uploadURL = "https://upload.cloud.189.cn"

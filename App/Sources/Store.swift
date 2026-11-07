@@ -20,6 +20,22 @@ final class Store: ObservableObject {
                 Task { @MainActor in self?.append(message) }
             }
         }
+        // 冷启动：从 Keychain 恢复会话，直接尝试拉目录
+        if let saved = SessionStore.load() {
+            session = saved
+            append("已恢复上次会话：\(saved.loginName)")
+            Task {
+                await client.restore(session: saved)
+                await load("-11")
+            }
+        }
+    }
+
+    func logout() {
+        SessionStore.clear()
+        session = Session()
+        entries = []
+        append("已退出登录")
     }
 
     func append(_ text: String) {
@@ -38,6 +54,7 @@ final class Store: ObservableObject {
         defer { busy = false }
         do {
             session = try await client.loginWithCookies(cookie)
+            SessionStore.save(session)
             append("已登录：\(session.loginName)")
             await load(folderId)
         } catch {

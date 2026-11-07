@@ -18,6 +18,7 @@ struct ContentView: View {
     @State private var cookieInput = ""
     @State private var showImporter = false
     @State private var tab = 0
+    @State private var showLogin = false
 
     var body: some View {
         TabView(selection: $tab) {
@@ -40,7 +41,7 @@ struct ContentView: View {
                 Section {
                     if store.session.isLoggedIn {
                         LabeledContent("账号", value: store.session.loginName)
-                        LabeledContent("sessionKey", value: String(store.session.sessionKey.prefix(8)) + "…")
+                        LabeledContent("会话", value: "有效")
                     } else {
                         Text("未登录").foregroundStyle(.secondary)
                     }
@@ -49,19 +50,36 @@ struct ContentView: View {
                 }
 
                 Section {
-                    TextEditor(text: $cookieInput)
-                        .frame(minHeight: 120)
-                        .font(.footnote.monospaced())
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                    Button("使用 Cookie 登录") {
-                        Task { await store.login(cookie: cookieInput) }
+                    Button {
+                        showLogin = true
+                    } label: {
+                        Label("通过网页登录（推荐）", systemImage: "safari")
                     }
-                    .disabled(cookieInput.isEmpty || store.busy)
-                } header: {
-                    Text("粘贴浏览器 Cookie")
+                    .disabled(store.busy)
                 } footer: {
-                    Text("必须包含 COOKIE_LOGIN_USER。打开 cloud.189.cn 登录后，从任意请求的 Cookie 里复制整段。")
+                    Text("在内嵌的官方登录页里扫码或输账号密码。登录成功后自动读取会话 cookie，不需要抓包、不需要装证书。")
+                }
+
+                if store.session.isLoggedIn {
+                    Section {
+                        Button("退出登录", role: .destructive) { store.logout() }
+                    }
+                }
+
+                Section {
+                    DisclosureGroup("高级：手动粘贴 Cookie") {
+                        TextEditor(text: $cookieInput)
+                            .frame(minHeight: 100)
+                            .font(.footnote.monospaced())
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                        Button("使用 Cookie 登录") {
+                            Task { await store.login(cookie: cookieInput) }
+                        }
+                        .disabled(cookieInput.isEmpty || store.busy)
+                    }
+                } footer: {
+                    Text("只在网页登录不可用时使用。需要包含 COOKIE_LOGIN_USER。")
                 }
 
                 if let error = store.errorText {
@@ -69,6 +87,11 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("189 秒传")
+            .sheet(isPresented: $showLogin) {
+                LoginSheet { cookie in
+                    Task { await store.login(cookie: cookie) }
+                }
+            }
         }
     }
 
