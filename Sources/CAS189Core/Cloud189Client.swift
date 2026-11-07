@@ -13,6 +13,8 @@ public actor Cloud189Client {
     public let transport: Transport
     public private(set) var session = Session()
     public var debugLog: (@Sendable (String) -> Void)?
+    /// 家庭云 AccessToken 缓存（12h）
+    var cachedAccessToken: (value: String, expiry: Date)?
 
     public init(transport: Transport = Transport()) {
         self.transport = transport

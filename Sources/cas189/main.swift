@@ -43,6 +43,11 @@ func authed() async throws -> Cloud189Client {
     guard let saved = loadSession() else { die("未登录，先执行 cas189 login") }
     let c = Cloud189Client()
     await c.restore(session: saved)
+    if ProcessInfo.processInfo.environment["CAS189_DEBUG"] != nil {
+        await c.setDebugLog { msg in
+            FileHandle.standardError.write(Data("[dbg] \(msg)\n".utf8))
+        }
+    }
     return c
 }
 
@@ -299,6 +304,63 @@ case "url":
         print(u.absoluteString)
     } catch { die(error.localizedDescription) }
 
+case "family-ls":
+    do {
+        let client = try await authed()
+        let families = try await client.familyInfo()
+        guard !families.isEmpty else { die("该账号没有家庭云") }
+        for f in families { print("家庭云: \(f.name)  familyId=\(f.id)") }
+        let fid = arg("--family") ?? families[0].id
+        let items = try await client.familyList(folderId: arg("--folder") ?? "-11", familyId: fid)
+        print("共 \(items.count) 项")
+        for e in items {
+            let size = e.isFolder ? "" : " [\(ByteCountFormatter.string(fromByteCount: e.size, countStyle: .file))]"
+            print("  \(e.isFolder ? "📁" : "📄") \(e.name)\(size)  id=\(e.id)")
+        }
+    } catch { die(error.localizedDescription) }
+
+case "family-upload":
+    guard let path = arg("--file") else { die("用法: cas189 family-upload --file <本地文件> [--family id] [--folder -11]") }
+    do {
+        let client = try await authed()
+        let families = try await client.familyInfo()
+        guard let first = families.first else { die("该账号没有家庭云") }
+        let fid = arg("--family") ?? first.id
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        var last = -1
+        let r = try await client.familyUpload(at: url, familyId: fid,
+                                              parentFolderId: arg("--folder") ?? "-11") { done, total in
+            if done != last { last = done; FileHandle.standardError.write(Data("  分片 \(done)/\(total)\n".utf8)) }
+        }
+        print(r.ok ? "✓ \(r.message)" : "✗ \(r.message)")
+    } catch { die(error.localizedDescription) }
+
+case "family-rapid":
+    guard let path = arg("--file") else { die("用法: cas189 family-rapid --file <x.cas|x.cas.torrent> [--family id]") }
+    do {
+        let client = try await authed()
+        let families = try await client.familyInfo()
+        guard let first = families.first else { die("该账号没有家庭云") }
+        let fid = arg("--family") ?? first.id
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        let item = try CasFile.parse(data: try Data(contentsOf: url), fileName: url.lastPathComponent)
+        let r = try await client.familyRapidUpload(item, familyId: fid,
+                                                  parentFolderId: arg("--folder") ?? "-11")
+        print(r.ok ? "✓ \(r.message)" : "✗ \(r.message)")
+    } catch { die(error.localizedDescription) }
+
+case "family-mkdir":
+    guard let name = arg("--name") else { die("用法: cas189 family-mkdir --name <名字> [--family id] [--folder -11]") }
+    do {
+        let client = try await authed()
+        let families = try await client.familyInfo()
+        guard let first = families.first else { die("该账号没有家庭云") }
+        let fid = arg("--family") ?? first.id
+        let id = try await client.familyMkdir(name: name, familyId: fid,
+                                              parentFolderId: arg("--folder") ?? "-11")
+        print("✓ 已创建 \(name)  id=\(id)")
+    } catch { die(error.localizedDescription) }
+
 case "raw":
     // 调试用：直接打一个签名接口，把原始 JSON 打出来
     guard let uri = arg("--uri") else { die("用法: cas189 raw --uri /person/xxx [--params a=1&b=2]") }
@@ -367,5 +429,9 @@ default:
       swift run cas189 rapid-zip --file <x.cas.zip>         解压凭证包并批量秒传
       swift run cas189 get --id <fileId> --out <路径>       下载文件（支持续传）
       swift run cas189 url --id <fileId>                    只取下载直链
+      swift run cas189 family-ls [--family id]             家庭云列表
+      swift run cas189 family-upload --file <文件>         上传到家庭云
+      swift run cas189 family-rapid --file <凭证>          家庭云秒传
+      swift run cas189 family-mkdir --name <名字>          家庭云新建文件夹
     """)
 }
