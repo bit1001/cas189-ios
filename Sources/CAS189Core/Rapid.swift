@@ -44,6 +44,13 @@ extension Cloud189Client {
                                        uploadFileId: uploadFileId)
                 }
 
+                // 关键一步（userscript 顺序）：init → checkTransSecond → commit
+                _ = try await signedRequest(uri: prefix + "/checkTransSecond", params: [
+                    ("fileMd5", upperMd5),
+                    ("sliceMd5", upperSlice),
+                    ("uploadFileId", uploadFileId)
+                ], method: method)
+
                 var commitParams: [(String, String)] = [("uploadFileId", uploadFileId)]
                 if method == "GET" {
                     commitParams.append(contentsOf: [

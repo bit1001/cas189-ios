@@ -182,33 +182,31 @@ extension Cloud189Client {
                                        uploadFileId: uploadFileId)
                 }
 
-                let base: [(String, String)] = [
+                var committed = false
+                var lastErr: Error?
+
+                // 变体 1：带 familyId 的 checkTransSecond
+                // checkTransSecond 必须带 familyId，否则 InfoSecurityErrorCode
+                _ = try await signedRequest(uri: "/family/checkTransSecond", params: [
+                    ("fileMd5", upperMd5),
+                    ("sliceMd5", upperSlice),
+                    ("uploadFileId", uploadFileId),
+                    ("familyId", familyId)
+                ], method: method)
+
+                // 实测唯一通过的组合：opertype=1、不带 lazyCheck、带 familyId
+                _ = try await signedRequest(uri: "/family/commitMultiUploadFile", params: [
                     ("uploadFileId", uploadFileId),
                     ("fileMd5", upperMd5),
                     ("sliceMd5", upperSlice),
-                    ("lazyCheck", "1"),
+                    ("opertype", "1"),
                     ("familyId", familyId)
-                ]
-                // 家庭云 commit 的 URI/参数在不同版本上有差异，逐个试
-                let variants: [(String, [(String, String)])] = [
-                    ("/family/commitMultiUploadFile", base + [("opertype", "1")]),
-                    ("/family/commitMultiUploadFile", base),
-                    ("/person/commitMultiUploadFile", base + [("opertype", "1")]),
-                    ("/person/commitMultiUploadFile", base)
-                ]
-                var committed = false
-                for (uri, params) in variants {
-                    do {
-                        _ = try await signedRequest(uri: uri, params: params, method: method)
-                        debugLog?("family commit 成功：\(uri)")
-                        committed = true
-                        break
-                    } catch {
-                        debugLog?("\(uri) 失败：\(error.localizedDescription)")
-                    }
-                }
+                ], method: method)
+                committed = true
+
                 if !committed {
-                    return RapidResult(ok: false, message: "家庭云不支持该文件的秒传（commit 被拒）",
+                    return RapidResult(ok: false,
+                                       message: "家庭云秒传被拒：\(lastErr?.localizedDescription ?? "未知")",
                                        uploadFileId: uploadFileId)
                 }
                 return RapidResult(ok: true, message: "家庭云秒传成功", uploadFileId: uploadFileId)
