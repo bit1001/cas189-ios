@@ -199,26 +199,32 @@ public actor Cloud189Client {
         return json
     }
 
+    /// 同上，但返回原始字节：PC 网页接口是 XML 而不是 JSON
+    public func webGetData(_ path: String, _ query: [(String, String)]) async throws -> Data {
+        var comps = URLComponents(string: C.webURL + path)!
+        comps.queryItems = query.map { URLQueryItem(name: $0.0, value: $0.1) }
+        let res = try await transport.request(comps.url!, headers: [
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Referer": C.referer
+        ])
+        log("GET \(path) -> HTTP \(res.status) \(res.body.count)B")
+        return res.body
+    }
+
     // MARK: - 目录 / 列表
 
     public func rootFolderId(isFamily: Bool = false) -> String { isFamily ? "-11" : "-11" }
 
     public func listEntries(folderId: String = "-11", pageSize: Int = 200) async throws -> [CloudEntry] {
         let path = "/api/open/file/listFiles.action"
-        let json = try await webGet(path, [
+        let data = try await webGetData(path, [
             ("pageSize", String(pageSize)),
             ("pageNum", "1"),
             ("folderId", folderId),
             ("mediaType", "0")
         ])
-        let arr = (json["fileListAO"] as? [String: Any])?["fileList"] as? [[String: Any]] ?? []
-        return arr.compactMap { item in
-            guard let id = item["id"] as? String, let name = item["name"] as? String else { return nil }
-            let size = (item["size"] as? NSNumber)?.int64Value ?? 0
-            let isFolder = (item["isFolder"] as? Bool) ?? ((item["fileType"] as? Int) == 1)
-            return CloudEntry(id: id, name: name, size: size, isFolder: isFolder,
-                              md5: item["md5"] as? String, parentId: folderId)
-        }
+        // PC 网页接口固定返回 XML
+        return try WebListParser.parse(data)
     }
 
     public func createFolder(name: String, parentId: String = "-11") async throws -> String {
@@ -242,20 +248,21 @@ public actor Cloud189Client {
     /// 确保拿到签名用的 RSA 公钥（有效期由服务端给）
     public func ensureSigningKey(force: Bool = false) async throws {
         if !force, !session.rsaPubKey.isEmpty { return }
+        // 该接口返回 XML：<keyPair><pubKey>..</pubKey><expire>..</expire><pkId>..</pkId><ver>2</ver></keyPair>
         for url in [C.apiURL + "/security/generateRsaKey.action",
                     C.webURL + "/api/security/generateRsaKey.action"] {
-            let res = try? await transport.request(URL(string: url)!, headers: [
+            guard let res = try? await transport.request(URL(string: url)!, headers: [
                 "Referer": C.referer,
                 "X-Request-ID": UUID().uuidString
-            ])
-            guard let res, let json = try? res.json() else { continue }
-            if let pub = json["pubKey"] as? String, let pk = json["pkId"] as? String,
-               CryptoTool.isUsableRSAPubKey(pub) {
-                session.rsaPubKey = pub
-                session.rsaPkId = pk
-                log("取得签名公钥 pkId=\(pk)")
-                return
-            }
+            ]) else { continue }
+            let text = res.text
+            guard let pub = Self.xmlTag(text, "pubKey"),
+                  let pk = Self.xmlTag(text, "pkId"),
+                  CryptoTool.isUsableRSAPubKey(pub), !pk.isEmpty else { continue }
+            session.rsaPubKey = pub
+            session.rsaPkId = pk
+            log("取得签名公钥 pkId=\(pk)")
+            return
         }
         throw CASError.missing("签名公钥（generateRsaKey 两次都失败）")
     }
@@ -292,6 +299,15 @@ public actor Cloud189Client {
             throw CASError.securityRejected(message)
         }
         throw CASError.api(code: code, message: message)
+    }
+
+    /// 从简单 XML 里取标签文本
+    static func xmlTag(_ xml: String, _ tag: String) -> String? {
+        guard let r = xml.range(of: "<\(tag)>"),
+              let e = xml.range(of: "</\(tag)>", range: r.upperBound..<xml.endIndex)
+        else { return nil }
+        return String(xml[r.upperBound..<e.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func isSessionError(code: String, message: String) -> Bool {

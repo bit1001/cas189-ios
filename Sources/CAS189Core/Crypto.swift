@@ -218,7 +218,7 @@ public enum CryptoTool {
     }
 
     public static func rsaEncryptBase64(x509PubKeyB64: String, plaintext: String) throws -> String {
-        throw CASError.unsupported("RSA 加密需要 Apple 平台的 Security.framework")
+        return try LinuxRSA.encryptPKCS1(Data(plaintext.utf8), x509Base64: x509PubKeyB64).base64EncodedString()
     }
     #endif
 }
