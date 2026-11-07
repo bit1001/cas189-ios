@@ -48,6 +48,9 @@ struct ContentView: View {
                     .padding(.top, 8)
             }
         }
+        .onOpenURL { url in
+            Task { await store.importIncoming([url], space: .personal) }
+        }
         .onChange(of: scenePhase) { phase in
             if phase == .background { BackgroundRefresh.schedule() }
         }

@@ -43,6 +43,16 @@ targets:
           - com.local.cas189.refresh
         UIBackgroundModes:
           - fetch
+        # 让「文件」App 能看到本 App 的 Documents，并支持共享/打开方式导入
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: 秒传凭证
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.data
+              - public.item
 schemes:
   CAS189:
     build:

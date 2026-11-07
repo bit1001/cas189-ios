@@ -474,4 +474,78 @@ extension Store {
             if target == familyFolderId { await loadFamily(target) }
         }
     }
+    /// 「用本 App 打开」进来的文件：复制进 Inbox，再按类型自动导入
+    func importIncoming(_ urls: [URL], space: CloudSpace) async {
+        let saved = LocalFiles.copyIn(urls)
+        guard !saved.isEmpty else {
+            append("没有收到可导入的文件")
+            return
+        }
+        for url in saved {
+            append("已接收 \(url.lastPathComponent)（\(LocalFiles.sizeText(url))）")
+        }
+        let supported = saved.filter { LocalFiles.isSupported($0) }
+        guard !supported.isEmpty else {
+            errorText = "收到的文件不是 .cas / .torrent / .zip"
+            return
+        }
+        await importCredentialsTo(supported, space: space, folderId: "-11")
+    }
+
+    /// 直接导入 App 文件夹里的文件（LiveContainer 下选择器不可用时的主路径）
+    func importLocalFiles(_ urls: [URL], space: CloudSpace, folderId: String) async {
+        append("从 App 文件夹导入 \(urls.count) 个文件")
+        await importCredentialsTo(urls, space: space, folderId: folderId)
+    }
+    /// 粘贴 .cas JSON 文本直接秒传（不依赖任何文件接口）
+    func rapidFromCASJSON(_ text: String, space: CloudSpace, folderId: String) async {
+        let raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return }
+        busy = true; errorText = nil
+        defer { busy = false }
+        do {
+            let data = Data(raw.utf8)
+            let item = try CasFile.parse(data: data, fileName: "pasted.cas")
+            let r: RapidResult
+            if space == .personal {
+                r = try await client.rapidUpload(item, parentFolderId: folderId)
+            } else {
+                guard !familyId.isEmpty else { throw CASError.missing("未连接家庭云") }
+                r = try await client.familyRapidUpload(item, familyId: familyId, parentFolderId: folderId)
+            }
+            append("粘贴凭证 \(item.name) → \(r.ok ? "秒传成功" : "未命中：\(r.message)")")
+            await refresh(space: space, target: folderId)
+        } catch {
+            errorText = error.localizedDescription
+            append("粘贴凭证失败：\(error.localizedDescription)")
+        }
+    }
+    /// 从 http(s) 链接下载凭证再导入（完全绕开 iOS 文件接口）
+    func importFromURL(_ text: String, space: CloudSpace, folderId: String) async {
+        let raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: raw), let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else {
+            errorText = "链接无效，需要 http(s) 地址"
+            return
+        }
+        busy = true; errorText = nil
+        do {
+            append("下载 \(raw)…")
+            let (data, response) = try await URLSession.shared.data(from: url)
+            if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
+                throw CASError.api(code: "HTTP \(http.statusCode)", message: "下载失败")
+            }
+            LocalFiles.ensureDirs()
+            let name = url.lastPathComponent.isEmpty ? "download.cas" : url.lastPathComponent
+            let dst = LocalFiles.inbox.appendingPathComponent(name)
+            try data.write(to: dst)
+            busy = false
+            append("已下载 \(name)（\(data.count) 字节）")
+            await importCredentialsTo([dst], space: space, folderId: folderId)
+        } catch {
+            busy = false
+            errorText = error.localizedDescription
+            append("下载失败：\(error.localizedDescription)")
+        }
+    }
 }

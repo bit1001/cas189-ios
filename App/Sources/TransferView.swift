@@ -11,6 +11,9 @@ struct TransferView: View {
     @State private var targetFolderName = "根目录"
     @State private var showFolderPicker = false
     @State private var shareText = ""
+    @State private var casText = ""
+    @State private var localFiles: [URL] = []
+    @State private var remoteURL = ""
 
 
     enum ImporterMode: Int, Identifiable {
@@ -110,6 +113,70 @@ struct TransferView: View {
                     }
                 }
 
+                Section {
+                    Button {
+                        localFiles = LocalFiles.list()
+                        store.append("App 文件夹里 \(localFiles.count) 个文件")
+                    } label: {
+                        Label("刷新 App 文件夹", systemImage: "arrow.clockwise")
+                    }
+                    if localFiles.isEmpty {
+                        Text("还没有文件").foregroundStyle(.secondary).font(.caption)
+                    }
+                    ForEach(localFiles, id: \.self) { url in
+                        Button {
+                            Task {
+                                await store.importCredentialsTo([url], space: targetSpace, folderId: targetFolderId)
+                            }
+                        } label: {
+                            HStack {
+                                Text(url.lastPathComponent).lineLimit(1)
+                                Spacer()
+                                Text(LocalFiles.sizeText(url)).font(.caption).foregroundStyle(.secondary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } header: {
+                    Text("App 文件夹")
+                } footer: {
+                    Text("把 .cas / .torrent / .zip 放进「文件」App 的「我的 iPhone / 189秒传」，或长按文件 → 共享 →「用 189秒传 打开」。LiveContainer 里系统选择器回调拿不到结果，这条路最稳。")
+                }
+
+                Section {
+                    TextField("https://example.com/xxx.cas.zip", text: $remoteURL)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                    Button("下载并导入") {
+                        let link = remoteURL
+                        Task { await store.importFromURL(link, space: targetSpace, folderId: targetFolderId) }
+                    }
+                    .disabled(remoteURL.isEmpty || store.busy)
+                } header: {
+                    Text("从链接导入")
+                } footer: {
+                    Text("把 .cas / .torrent / .zip 放到任意 http 直链（NAS、VPS、网盘直链都行），这里下载后直接秒传。不依赖任何系统文件接口。")
+                }
+
+                Section {
+                    TextEditor(text: $casText)
+                        .frame(minHeight: 80)
+                        .font(.caption.monospaced())
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    Button("秒传这段 .cas 内容") {
+                        let text = casText
+                        Task { await store.rapidFromCASJSON(text, space: targetSpace, folderId: targetFolderId) }
+                    }
+                    .disabled(casText.isEmpty || store.busy)
+                } header: {
+                    Text("粘贴 .cas 内容")
+                } footer: {
+                    Text(".cas 是 JSON 文本，直接粘进来即可，完全不需要文件接口。")
+                }
+
                 if store.busy || !store.uploadLabel.isEmpty {
                     Section("进行中") {
                         VStack(alignment: .leading, spacing: 6) {
@@ -139,6 +206,9 @@ struct TransferView: View {
                 Button("知道了") { store.errorText = nil }
             } message: {
                 Text(store.errorText ?? "")
+            }
+            .onAppear {
+                localFiles = LocalFiles.list()
             }
             .sheet(isPresented: $showFolderPicker) {
                 FolderPickerView(space: targetSpace) { id, name in
