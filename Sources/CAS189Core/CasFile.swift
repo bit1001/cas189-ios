@@ -34,32 +34,51 @@ public enum CasFile {
            data[data.startIndex + 1] == 0xBB, data[data.startIndex + 2] == 0xBF {
             data = data.subdata(in: (data.startIndex + 3)..<data.endIndex)
         }
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw FormatError(message: "不是合法的 .cas JSON")
+        guard let any = try? JSONSerialization.jsonObject(with: data,
+                                                         options: [.fragmentsAllowed]) else {
+            throw FormatError(message: "不是 JSON（开头：\(preview(data))）")
+        }
+        // 有些导出工具把内容套在 data/result 里
+        var obj: [String: Any]
+        if let dict = any as? [String: Any] {
+            obj = dict
+            for key in ["data", "result", "cas"] {
+                if let inner = dict[key] as? [String: Any] { obj = inner; break }
+            }
+        } else {
+            throw FormatError(message: "JSON 顶层不是对象（开头：\(preview(data))）")
         }
 
         func first(_ keys: String...) -> String {
             for k in keys {
                 if let v = obj[k] as? String, !v.isEmpty { return v }
+                if let v = obj[k] as? NSNumber { return v.stringValue }
             }
             return ""
         }
+        func int64(_ keys: String...) -> Int64? {
+            for k in keys {
+                if let v = obj[k] as? NSNumber { return v.int64Value }
+                if let v = obj[k] as? String, let n = Int64(v.trimmingCharacters(in: .whitespaces)) { return n }
+            }
+            return nil
+        }
 
-        var name = first("name", "fileName")
-        let md5 = first("md5", "fileMd5", "file_md5").uppercased()
-        var sliceMd5 = first("slice_md5", "sliceMd5").uppercased()
-        let size = (obj["size"] as? NSNumber)?.int64Value
-            ?? (obj["size"] as? String).flatMap { Int64($0) }
-            ?? 0
-        let sliceSize = (obj["slice_size"] as? NSNumber)?.intValue
-            ?? (obj["slice_size"] as? String).flatMap { Int($0) }
-            ?? C.sliceSize
+        var name = first("name", "fileName", "file_name", "path", "originalName")
+        let md5 = first("md5", "fileMd5", "file_md5", "fileHash", "hash").uppercased()
+        var sliceMd5 = first("slice_md5", "sliceMd5", "SliceMd5", "SLICE_MD5").uppercased()
+        let size = int64("size", "fileSize", "file_size", "length") ?? 0
+        let sliceSize = Int(int64("slice_size", "sliceSize", "fileSliceSize") ?? Int64(C.sliceSize))
 
         var parts: [String] = []
-        if let list = obj["slice_md5s"] as? [String] {
-            parts = list.map { $0.uppercased() }
-        } else if let list = obj["slice_md5s"] as? [Any] {
-            parts = list.compactMap { ($0 as? String)?.uppercased() }
+        for key in ["slice_md5s", "sliceMd5s", "sliceMd5List", "parts", "md5s"] {
+            if let list = obj[key] as? [String] {
+                parts = list.map { $0.uppercased() }
+                break
+            } else if let list = obj[key] as? [Any] {
+                let mapped = list.compactMap { ($0 as? String)?.uppercased() }
+                if !mapped.isEmpty { parts = mapped; break }
+            }
         }
 
         if name.isEmpty || name.lowercased().hasSuffix(".cas") || name.lowercased().hasSuffix(".cas.torrent") {
@@ -89,6 +108,17 @@ public enum CasFile {
         return (try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])) ?? Data()
     }
 
+    /// 出错时把内容开头带进错误信息，方便判断到底是哪种格式
+    static func preview(_ data: Data, limit: Int = 80) -> String {
+        if let text = String(data: data.prefix(limit), encoding: .utf8) {
+            let one = text.replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "\r", with: " ")
+                .trimmingCharacters(in: .whitespaces)
+            return one.isEmpty ? "<空白>" : one
+        }
+        return data.prefix(8).map { String(format: "%02x", $0) }.joined(separator: " ")
+    }
+
     public static func isCasName(_ n: String) -> Bool {
         let l = n.lowercased()
         return l.hasSuffix(".cas") || l.hasSuffix(".cas.torrent")
@@ -102,7 +132,7 @@ public enum CasFile {
     }
 
     /// 按扩展名解析：`.torrent` 走 bencode，其余当 JSON
-    public static func parse(data: Data, fileName: String) throws -> CasItem {
+    public static func parse(data: Data, fileName: String = "") throws -> CasItem {
         if fileName.lowercased().hasSuffix(".torrent") {
             return try CasTorrent.parse(data)
         }

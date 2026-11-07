@@ -270,10 +270,13 @@ extension Store {
                             } else {
                                 append("  zip 内 \(e.name) 不是合法种子，跳过")
                             }
-                        } else if let item = try? CasFile.parse(data: e.data, fileName: e.name) {
-                            items.append((item, "cas")); used += 1
                         } else {
-                            append("  zip 内跳过 \(e.name)（不是 .cas 凭证）")
+                            do {
+                                items.append((try CasFile.parse(data: e.data, fileName: e.name), "cas"))
+                                used += 1
+                            } catch {
+                                append("  \(e.name)：\(error.localizedDescription)")
+                            }
                         }
                     }
                     append("\(url.lastPathComponent)：\(entries.count) 个条目，认出 \(used) 个凭证")
@@ -282,11 +285,13 @@ extension Store {
                     }
                 } else if lower.hasSuffix(".torrent") {
                     items.append((try CasTorrent.parse(data), "torrent"))
-                } else if let item = try? CasFile.parse(data: data, fileName: url.lastPathComponent) {
-                    // 没后缀 / 后缀不标准也按 .cas 试一次（选了「导入秒传」就应该当凭证处理）
-                    items.append((item, "cas"))
                 } else {
-                    append("跳过 \(url.lastPathComponent)（不是 .cas 凭证）")
+                    // 没后缀 / 后缀不标准也按 .cas 试一次（选了「导入秒传」就应该当凭证处理）
+                    do {
+                        items.append((try CasFile.parse(data: data, fileName: url.lastPathComponent), "cas"))
+                    } catch {
+                        append("跳过 \(url.lastPathComponent)：\(error.localizedDescription)")
+                    }
                 }
             } catch {
                 append("\(url.lastPathComponent) 读取失败：\(error.localizedDescription)")

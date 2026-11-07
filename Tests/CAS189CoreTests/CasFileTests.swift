@@ -70,6 +70,47 @@ final class CasFileTests: XCTestCase {
         XCTAssertEqual(CasFile.stripCasName("movie.mkv.cas.torrent"), "movie.mkv")
         XCTAssertEqual(CasFile.stripCasName("movie.mkv.cas"), "movie.mkv")
     }
+
+    /// 不同导出工具的字段名：fileSize / file_name / fileMd5
+    func testParseAlternateFieldNames() throws {
+        let json = """
+        {"fileName":"The Scandal S01E01.mkv","fileSize":123456789,"fileMd5":"AABBCCDDEEFF00112233445566778899","sliceMd5":"11223344556677889900AABBCCDDEEFF","sliceSize":10485760}
+        """
+        let item = try CasFile.parse(data: Data(json.utf8))
+        XCTAssertEqual(item.name, "The Scandal S01E01.mkv")
+        XCTAssertEqual(item.size, 123456789)
+        XCTAssertEqual(item.fileMd5, "AABBCCDDEEFF00112233445566778899")
+        XCTAssertEqual(item.sliceMd5, "11223344556677889900AABBCCDDEEFF")
+    }
+
+    /// 内容套在 data 里
+    func testParseNestedObject() throws {
+        let json = """
+        {"code":0,"data":{"name":"a.mkv","size":100,"md5":"AABBCCDDEEFF00112233445566778899"}}
+        """
+        let item = try CasFile.parse(data: Data(json.utf8))
+        XCTAssertEqual(item.name, "a.mkv")
+        XCTAssertEqual(item.size, 100)
+    }
+
+    /// 带 BOM 的 .cas
+    func testParseStripsBOM() throws {
+        var data = Data([0xEF, 0xBB, 0xBF])
+        data.append(Data("""
+        {"name":"b.mkv","size":10,"md5":"AABBCCDDEEFF00112233445566778899"}
+        """.utf8))
+        let item = try CasFile.parse(data: data)
+        XCTAssertEqual(item.name, "b.mkv")
+    }
+
+    /// 错误信息里要带内容开头，便于定位
+    func testParseErrorIncludesPreview() {
+        let data = Data("this is not json".utf8)
+        XCTAssertThrowsError(try CasFile.parse(data: data)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("this is not json"),
+                          "错误信息应包含内容预览，实际：\(error.localizedDescription)")
+        }
+    }
 }
 
 final class ThumbnailTests: XCTestCase {
