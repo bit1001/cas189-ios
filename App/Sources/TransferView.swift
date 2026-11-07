@@ -45,19 +45,17 @@ struct TransferView: View {
         }
     }
 
-    /// 进程内的文档浏览器，用于 document picker 取不到结果的环境
-    private func pickWithBrowser(mode chosen: ImporterMode) {
-        store.append("正在打开文件浏览器…")
-        DocumentBrowserCoordinator.pick(
-            allowsMultiple: true,
-            log: { message in Task { @MainActor in store.append(message) } }
-        ) { urls in
+    /// 文件 App 里「拷贝」的文件，从剪贴板取出来导入
+    private func importFromClipboard(mode chosen: ImporterMode) {
+        store.append("读取剪贴板…")
+        ClipboardImport.takeFiles { urls in
             Task { @MainActor in
                 guard !urls.isEmpty else {
-                    store.append("文件浏览器没有返回文件")
+                    store.append("剪贴板里没有文件（先在文件 App 里长按文件 → 拷贝）")
+                    store.errorText = "剪贴板里没有文件。请在「文件」App 里长按文件 → 拷贝，再回到这里。"
                     return
                 }
-                store.append("已选择 \(urls.count) 个文件：\(urls.prefix(3).map(\.lastPathComponent).joined(separator: ", "))")
+                store.append("从剪贴板取得 \(urls.count) 个文件：\(urls.map(\.lastPathComponent).joined(separator: ", "))")
                 switch chosen {
                 case .upload:
                     await store.uploadTo(urls, space: targetSpace, folderId: targetFolderId)
@@ -112,9 +110,9 @@ struct TransferView: View {
                         Label("导入秒传凭证（.cas / .torrent / .zip）", systemImage: "shippingbox")
                     }
                     Button {
-                        pickWithBrowser(mode: .credentials)
+                        importFromClipboard(mode: .credentials)
                     } label: {
-                        Label("用文件浏览器选择（兼容模式）", systemImage: "folder.badge.questionmark")
+                        Label("从剪贴板导入（在文件 App 里拷贝后）", systemImage: "doc.on.clipboard")
                     }
                 } header: {
                     Text("上传 / 秒传")
