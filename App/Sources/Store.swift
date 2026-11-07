@@ -15,6 +15,8 @@ final class Store: ObservableObject {
     @Published var searchResults: [CloudEntry] = []
     @Published var isSearching = false
     @Published var errorText: String?
+    @Published var needsRelogin = false
+    @Published var lastShare: ShareLink?
 
     let client: Cloud189Client
 
@@ -178,5 +180,29 @@ final class Store: ObservableObject {
         let hits = await client.search(kw, folderId: folderId)
         searchResults = hits
         append("搜索「\(kw)」命中 \(hits.count) 项")
+    }
+
+    // MARK: - 分享
+
+    func createShare(for entry: CloudEntry) async {
+        busy = true; errorText = nil
+        defer { busy = false }
+        do {
+            let link = try await client.createShare(fileId: entry.id)
+            lastShare = link
+            append("已创建分享：\(link.url) 提取码 \(link.accessCode)")
+        } catch {
+            errorText = error.localizedDescription
+            append("创建分享失败：\(error.localizedDescription)")
+        }
+    }
+
+    func clearShare() { lastShare = nil }
+
+    func relogin() {
+        needsRelogin = false
+        SessionStore.clear()
+        session = Session()
+        entries = []
     }
 }
