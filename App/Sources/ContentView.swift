@@ -27,7 +27,17 @@ struct ContentView: View {
             logTab.tabItem { Label("日志", systemImage: "doc.text") }.tag(2)
         }
         .overlay(alignment: .top) {
-            if store.busy {
+            if store.uploadProgress > 0 || !store.uploadLabel.isEmpty {
+                VStack(spacing: 6) {
+                    Text("\(store.uploadLabel)  \(Int(store.uploadProgress * 100))%")
+                        .font(.caption)
+                    ProgressView(value: store.uploadProgress)
+                }
+                .padding(10)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+            } else if store.busy {
                 ProgressView().padding(6).background(.ultraThinMaterial, in: Capsule()).padding(.top, 8)
             }
         }

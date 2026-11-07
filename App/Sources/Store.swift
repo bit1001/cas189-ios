@@ -9,6 +9,8 @@ final class Store: ObservableObject {
     @Published var entries: [CloudEntry] = []
     @Published var folderId: String = "-11"
     @Published var busy = false
+    @Published var uploadProgress: Double = 0
+    @Published var uploadLabel: String = ""
     @Published var errorText: String?
 
     let client: Cloud189Client
@@ -98,7 +100,26 @@ final class Store: ObservableObject {
 
             let result = try await client.rapidUpload(item, parentFolderId: folderId)
             append("秒传结果：\(result.ok ? "成功" : "未命中") — \(result.message)")
-            if result.ok { await load(folderId) }
+
+            if result.ok {
+                await load(folderId)
+                return
+            }
+
+            // 未命中：自动转真实分片上传
+            append("转为真实上传…")
+            uploadLabel = "上传 \(url.lastPathComponent)"
+            uploadProgress = 0
+            defer { uploadProgress = 0; uploadLabel = "" }
+            let uploaded = try await client.uploadFile(
+                at: url, name: url.lastPathComponent, parentFolderId: folderId
+            ) { done, total in
+                Task { @MainActor [weak self] in
+                    self?.uploadProgress = total > 0 ? Double(done) / Double(total) : 0
+                }
+            }
+            append("上传结果：\(uploaded.message)")
+            await load(folderId)
         } catch {
             errorText = error.localizedDescription
             append("秒传失败：\(error.localizedDescription)")
