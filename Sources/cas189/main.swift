@@ -215,6 +215,67 @@ case "rapid-torrent":
         print(r.ok ? "✓ 秒传成功（未上传任何字节）" : "✗ 未命中：\(r.message)")
     } catch { die(error.localizedDescription) }
 
+case "make-cas":
+    guard let path = arg("--file") else { die("用法: cas189 make-cas --file <本地文件> [--out <输出>]") }
+    let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    do {
+        let fp = try CryptoTool.fingerprintFile(url)
+        let item = CasItem(name: url.lastPathComponent, size: fp.size,
+                           fileMd5: fp.fileMd5, sliceMd5: fp.sliceMd5,
+                           sliceSize: fp.sliceSize, parts: fp.parts)
+        let data = CasFile.build(item)
+        let outPath = arg("--out") ?? (url.path + ".cas")
+        try data.write(to: URL(fileURLWithPath: outPath))
+        print("✓ 已生成 \(outPath)（\(data.count) 字节）")
+        print("  \(String(data: data, encoding: .utf8) ?? "")")
+    } catch { die(error.localizedDescription) }
+
+case "cas-info":
+    guard let path = arg("--file") else { die("用法: cas189 cas-info --file <x.cas|x.cas.torrent>") }
+    do {
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        let item = try CasFile.parse(data: try Data(contentsOf: url), fileName: url.lastPathComponent)
+        print("名称:     \(item.name)")
+        print("大小:     \(item.size)")
+        print("fileMd5:  \(item.fileMd5)")
+        print("sliceMd5: \(item.sliceMd5)")
+        print("分片数:   \(item.parts.count)")
+    } catch { die(error.localizedDescription) }
+
+case "rapid-cas":
+    guard let path = arg("--file") else { die("用法: cas189 rapid-cas --file <x.cas> [--folder -11]") }
+    do {
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        let item = try CasFile.parse(data: try Data(contentsOf: url), fileName: url.lastPathComponent)
+        print("凭证: \(item.name)  \(item.size) 字节  \(item.parts.count) 片")
+        let client = try await authed()
+        let r = try await client.rapidUpload(item, parentFolderId: arg("--folder") ?? "-11")
+        print(r.ok ? "✓ 秒传成功（未上传任何字节）" : "✗ 未命中：\(r.message)")
+    } catch { die(error.localizedDescription) }
+
+case "rapid-zip":
+    guard let path = arg("--file") else { die("用法: cas189 rapid-zip --file <x.cas.zip> [--folder -11]") }
+    do {
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        let entries = try CasFile.entries(inArchive: url)
+        guard !entries.isEmpty else { die("压缩包内没有 .cas 文件") }
+        print("压缩包内 \(entries.count) 个凭证")
+        let client = try await authed()
+        let folder = arg("--folder") ?? "-11"
+        var ok = 0
+        for (index, e) in entries.enumerated() {
+            do {
+                let item = try CasFile.parse(data: e.data, fileName: e.name)
+                let r = try await client.rapidUpload(item, parentFolderId: folder)
+                if r.ok { ok += 1 }
+                print("  [\(index + 1)/\(entries.count)] \(item.name) → \(r.ok ? "✓" : "✗ \(r.message)")")
+            } catch {
+                print("  [\(index + 1)/\(entries.count)] \(e.name) → 解析失败：\(error.localizedDescription)")
+            }
+        }
+        print("完成 \(ok)/\(entries.count)")
+    } catch { die(error.localizedDescription) }
+
 case "raw":
     // 调试用：直接打一个签名接口，把原始 JSON 打出来
     guard let uri = arg("--uri") else { die("用法: cas189 raw --uri /person/xxx [--params a=1&b=2]") }
@@ -277,5 +338,9 @@ default:
       swift run cas189 make-torrent --file <文件>           生成本地 .cas.torrent
       swift run cas189 torrent-info --file <种子>           查看种子里的指纹
       swift run cas189 rapid-torrent --file <种子>          只凭种子秒传（不读本地文件）
+      swift run cas189 make-cas --file <文件>               生成本地 .cas 凭证
+      swift run cas189 cas-info --file <凭证>               查看 .cas / .cas.torrent
+      swift run cas189 rapid-cas --file <凭证>              凭 .cas 秒传
+      swift run cas189 rapid-zip --file <x.cas.zip>         解压凭证包并批量秒传
     """)
 }
