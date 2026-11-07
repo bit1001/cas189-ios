@@ -71,6 +71,26 @@ enum LocalFiles {
         return saved
     }
 
+    /// 删除 App 文件夹里的文件（Documents 与 Inbox 同名副本一起删）
+    static func delete(_ url: URL) throws {
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+        let sameName = inbox.appendingPathComponent(url.lastPathComponent)
+        if sameName != url, FileManager.default.fileExists(atPath: sameName.path) {
+            try? FileManager.default.removeItem(at: sameName)
+        }
+    }
+
+    /// 清空所有可导入的凭证文件
+    static func deleteAllSupported() -> (deleted: Int, failed: Int) {
+        var deleted = 0, failed = 0
+        for url in list() where isSupported(url) {
+            do { try delete(url); deleted += 1 } catch { failed += 1 }
+        }
+        return (deleted, failed)
+    }
+
     static func sizeText(_ url: URL) -> String {
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         return ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)

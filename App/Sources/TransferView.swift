@@ -66,6 +66,18 @@ struct TransferView: View {
         }
     }
 
+    /// 删除 App 文件夹里的文件，并刷新列表
+    private func deleteLocal(_ url: URL) {
+        do {
+            try LocalFiles.delete(url)
+            localFiles = LocalFiles.list()
+            store.append("已删除 \(url.lastPathComponent)")
+        } catch {
+            store.append("删除失败：\(error.localizedDescription)")
+            store.errorText = error.localizedDescription
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -150,6 +162,15 @@ struct TransferView: View {
                     } label: {
                         Label("刷新 App 文件夹", systemImage: "arrow.clockwise")
                     }
+                    if !localFiles.filter({ LocalFiles.isSupported($0) }).isEmpty {
+                        Button(role: .destructive) {
+                            let r = LocalFiles.deleteAllSupported()
+                            localFiles = LocalFiles.list()
+                            store.append("清空 App 文件夹：删除 \(r.deleted) 个\(r.failed > 0 ? "，失败 \(r.failed) 个" : "")")
+                        } label: {
+                            Label("清空凭证文件", systemImage: "trash.slash")
+                        }
+                    }
                     if localFiles.isEmpty {
                         Text("还没有文件").foregroundStyle(.secondary).font(.caption)
                     }
@@ -167,6 +188,26 @@ struct TransferView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                deleteLocal(url)
+                            } label: {
+                                Label("删除", systemImage: "trash")
+                            }
+                        }
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                deleteLocal(url)
+                            } label: {
+                                Label("删除文件", systemImage: "trash")
+                            }
+                        }
+                    }
+                    .onDelete { offsets in
+                        let shown = localFiles.filter { LocalFiles.isSupported($0) }
+                        for index in offsets where index < shown.count {
+                            deleteLocal(shown[index])
+                        }
                     }
                 } header: {
                     Text("App 文件夹")
