@@ -11,11 +11,15 @@ struct CAS189App: App {
             ContentView()
                 .environmentObject(store)
         }
+        .backgroundTask(.appRefresh(BackgroundRefresh.taskID)) {
+            await store.backgroundRefresh()
+        }
     }
 }
 
 struct ContentView: View {
     @EnvironmentObject private var store: Store
+    @Environment(\.scenePhase) private var scenePhase
     @State private var cookieInput = ""
     @State private var showImporter = false
     @State private var tab = 0
@@ -147,6 +151,11 @@ struct ContentView: View {
                             }
                         }
                         .swipeActions(edge: .trailing) {
+                            if !entry.isFolder {
+                                Button {
+                                    Task { await store.download(entry) }
+                                } label: { Label("下载", systemImage: "arrow.down.circle") }
+                            }
                             Button {
                                 Task { await store.createShare(for: entry) }
                             } label: { Label("创建分享链接", systemImage: "square.and.arrow.up") }
@@ -169,7 +178,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("云盘")
+            .navigationTitle(store.downloadLabel.isEmpty ? "云盘" : store.downloadLabel)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
@@ -203,6 +212,15 @@ struct ContentView: View {
                     }
                     renameTarget = nil
                 }
+            }
+            .sheet(item: Binding(
+                get: { store.downloadedFile.map { ShareSheetItem(url: $0) } },
+                set: { if $0 == nil { store.clearDownload() } }
+            )) { item in
+                ActivityView(items: [item.url])
+            }
+            .onChange(of: scenePhase) { phase in
+                if phase == .background { BackgroundRefresh.schedule() }
             }
             .alert("分享链接", isPresented: Binding(
                 get: { store.lastShareText != nil },

@@ -16,6 +16,8 @@ final class Store: ObservableObject {
     @Published var isSearching = false
     @Published var errorText: String?
     @Published var lastShareText: String?
+    @Published var downloadLabel = ""
+    @Published var downloadedFile: URL?
     @Published var needsRelogin = false
 
     let client: Cloud189Client
@@ -237,4 +239,33 @@ final class Store: ObservableObject {
     }
 
     func clearShare() { lastShareText = nil }
+
+    // MARK: - 下载
+
+    func download(_ entry: CloudEntry) async {
+        guard !entry.isFolder else { return }
+        busy = true; errorText = nil
+        downloadLabel = "下载 \(entry.name)"
+        defer { busy = false; downloadLabel = "" }
+        do {
+            let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let dst = dir.appendingPathComponent(entry.name)
+            let n = try await client.download(fileId: entry.id, to: dst)
+            downloadedFile = dst
+            append("已下载 \(entry.name)（\(ByteCountFormatter.string(fromByteCount: n, countStyle: .file))）")
+        } catch {
+            errorText = error.localizedDescription
+            append("下载失败：\(error.localizedDescription)")
+            if isSessionExpired(error) { needsRelogin = true }
+        }
+    }
+
+    /// 后台刷新：重拉当前目录，让下次打开 App 时列表是新的
+    func backgroundRefresh() async {
+        BackgroundRefresh.schedule()
+        guard !session.cookies.isEmpty else { return }
+        await load(folderId)
+    }
+
+    func clearDownload() { downloadedFile = nil }
 }

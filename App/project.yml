@@ -39,6 +39,10 @@ targets:
           - UIInterfaceOrientationPortrait
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: false
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.local.cas189.refresh
+        UIBackgroundModes:
+          - fetch
 schemes:
   CAS189:
     build:

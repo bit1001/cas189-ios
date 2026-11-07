@@ -276,6 +276,29 @@ case "rapid-zip":
         print("完成 \(ok)/\(entries.count)")
     } catch { die(error.localizedDescription) }
 
+case "get":
+    guard let id = arg("--id") else { die("用法: cas189 get --id <fileId> [--out <路径>]") }
+    guard let client = try? await authed() else { die("登录状态无效") }
+    do {
+        let out = arg("--out") ?? (id + ".download")
+        let dst = URL(fileURLWithPath: (out as NSString).expandingTildeInPath)
+        var lastPct = -1
+        let n = try await client.download(fileId: id, to: dst) { done, total in
+            guard total > 0 else { return }
+            let pct = Int(done * 100 / total)
+            if pct >= lastPct + 10 { lastPct = pct; FileHandle.standardError.write(Data("  \(pct)%\n".utf8)) }
+        }
+        print("✓ 已下载 \(dst.path)（\(n) 字节）")
+    } catch { die(error.localizedDescription) }
+
+case "url":
+    guard let id = arg("--id") else { die("用法: cas189 url --id <fileId>") }
+    guard let client = try? await authed() else { die("登录状态无效") }
+    do {
+        let u = try await client.downloadURL(fileId: id)
+        print(u.absoluteString)
+    } catch { die(error.localizedDescription) }
+
 case "raw":
     // 调试用：直接打一个签名接口，把原始 JSON 打出来
     guard let uri = arg("--uri") else { die("用法: cas189 raw --uri /person/xxx [--params a=1&b=2]") }
@@ -342,5 +365,7 @@ default:
       swift run cas189 cas-info --file <凭证>               查看 .cas / .cas.torrent
       swift run cas189 rapid-cas --file <凭证>              凭 .cas 秒传
       swift run cas189 rapid-zip --file <x.cas.zip>         解压凭证包并批量秒传
+      swift run cas189 get --id <fileId> --out <路径>       下载文件（支持续传）
+      swift run cas189 url --id <fileId>                    只取下载直链
     """)
 }
