@@ -94,6 +94,49 @@ case "ls":
         die(error.localizedDescription)
     }
 
+case "upload":
+    guard let path = arg("--file") else { die("用法: cas189 upload --file <路径> [--folder -11] [--overwrite]") }
+    guard let saved = loadSession() else { die("未登录，先执行 cas189 login") }
+    let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    let folder = arg("--folder") ?? "-11"
+    let client = Cloud189Client()
+    await client.restore(session: saved)
+    await client.setDebugLog { msg in FileHandle.standardError.write(Data(("  · " + msg + "\n").utf8)) }
+    do {
+        print("上传 \(url.lastPathComponent) → 目录 \(folder)")
+        let result = try await client.uploadFile(at: url, parentFolderId: folder,
+                                                 overwrite: flag("--overwrite")) { done, total in
+            let pct = total > 0 ? Double(done) / Double(total) * 100 : 0
+            FileHandle.standardError.write(Data(String(format: "\r  分片 %d/%d (%.0f%%)", done, total, pct).utf8))
+            if done == total { FileHandle.standardError.write(Data("\n".utf8)) }
+        }
+        print(result.ok ? "✓ \(result.message)" : "✗ \(result.message)")
+    } catch {
+        die(error.localizedDescription)
+    }
+
+case "raw":
+    // 调试用：直接打一个签名接口，把原始 JSON 打出来
+    guard let uri = arg("--uri") else { die("用法: cas189 raw --uri /person/xxx [--params a=1&b=2]") }
+    guard let saved = loadSession() else { die("未登录") }
+    let client = Cloud189Client()
+    await client.restore(session: saved)
+    await client.setDebugLog { msg in FileHandle.standardError.write(Data(("  · " + msg + "\n").utf8)) }
+    var params: [(String, String)] = []
+    if let p = arg("--params"), !p.isEmpty {
+        for pair in p.split(separator: "&") {
+            let kv = pair.split(separator: "=", maxSplits: 1)
+            if kv.count == 2 { params.append((String(kv[0]), String(kv[1]))) }
+        }
+    }
+    do {
+        let json = try await client.signedRequest(uri: uri, params: params)
+        let out = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
+        print(String(data: out, encoding: .utf8) ?? "")
+    } catch {
+        die(error.localizedDescription)
+    }
+
 case "rapid":
     guard let path = arg("--file") else { die("用法: cas189 rapid --file <路径> [--folder -11] [--overwrite]") }
     guard let saved = loadSession() else { die("未登录，先执行 cas189 login --cookie ...") }
@@ -123,5 +166,7 @@ default:
       swift run cas189 login --cookie "COOKIE_LOGIN_USER=…" 用浏览器 Cookie 登录并保存会话
       swift run cas189 ls [--folder -11]                    列目录
       swift run cas189 rapid --file <路径> [--folder -11]   秒传本地文件
+      swift run cas189 upload --file <路径> [--folder -11]  真实分片上传（秒传未命中时的兜底）
+      swift run cas189 raw --uri /person/xxx [--params a=1&b=2]  调试：直接打签名接口
     """)
 }
