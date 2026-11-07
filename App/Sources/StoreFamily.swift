@@ -329,4 +329,144 @@ extension Store {
             append("转存失败：\(error.localizedDescription)")
         }
     }
+    // MARK: - 指定目标的上传 / 秒传 / 转存（导入界面用）
+
+    func listForPicker(space: CloudSpace, folderId: String) async throws -> [CloudEntry] {
+        try await client.entries(space: space.key, folderId: folderId, familyId: familyId)
+    }
+
+    /// 选择文件 → 上传（先试秒传，未命中转真实上传）
+    func uploadTo(_ urls: [URL], space: CloudSpace, folderId: String) async {
+        guard !urls.isEmpty else { return }
+        busy = true; errorText = nil
+        defer { busy = false; uploadProgress = 0; uploadLabel = "" }
+        var ok = 0
+        for (index, url) in urls.enumerated() {
+            uploadLabel = "[\(index + 1)/\(urls.count)] \(url.lastPathComponent)"
+            do {
+                let r = try await transferOne(url: url, space: space, folderId: folderId)
+                if r.ok { ok += 1 }
+                append("\(url.lastPathComponent) → \(r.message)")
+            } catch {
+                append("\(url.lastPathComponent) 失败：\(error.localizedDescription)")
+                if isSessionExpired(error) { needsRelogin = true; break }
+            }
+        }
+        uploadProgress = 0; uploadLabel = ""
+        append("上传完成 \(ok)/\(urls.count)")
+        await refresh(space: space, target: folderId)
+    }
+
+    /// 单个文件：先算指纹试秒传，未命中走真实上传
+    private func transferOne(url: URL, space: CloudSpace, folderId: String) async throws -> (ok: Bool, message: String) {
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+
+        let fp = try await Task.detached(priority: .userInitiated) {
+            try CryptoTool.fingerprintFile(url)
+        }.value
+        let item = CasItem(name: url.lastPathComponent, size: fp.size,
+                           fileMd5: fp.fileMd5, sliceMd5: fp.sliceMd5,
+                           sliceSize: fp.sliceSize, parts: fp.parts)
+
+        if space == .personal {
+            let rapid = try await client.rapidUpload(item, parentFolderId: folderId)
+            if rapid.ok { return (true, "秒传成功") }
+        } else {
+            guard !familyId.isEmpty else { throw CASError.missing("未连接家庭云") }
+            let rapid = try await client.familyRapidUpload(item, familyId: familyId,
+                                                           parentFolderId: folderId)
+            if rapid.ok { return (true, "秒传成功") }
+        }
+        uploadLabel = "上传 \(url.lastPathComponent)"
+        let uploaded: RapidResult
+        if space == .personal {
+            uploaded = try await client.uploadFile(at: url, name: url.lastPathComponent,
+                                                   parentFolderId: folderId) { done, total in
+                Task { @MainActor [weak self] in
+                    self?.uploadProgress = total > 0 ? Double(done) / Double(total) : 0
+                }
+            }
+        } else {
+            uploaded = try await client.familyUpload(at: url, familyId: familyId,
+                                                     name: url.lastPathComponent,
+                                                     parentFolderId: folderId) { done, total in
+                Task { @MainActor [weak self] in
+                    self?.uploadProgress = total > 0 ? Double(done) / Double(total) : 0
+                }
+            }
+        }
+        return (uploaded.ok, uploaded.message)
+    }
+
+    /// 凭证（.cas / .torrent / .zip）秒传到指定位置
+    func importCredentialsTo(_ urls: [URL], space: CloudSpace, folderId: String) async {
+        busy = true; errorText = nil
+        defer { busy = false; uploadLabel = "" }
+        let items = parseCredentials(urls)
+        guard !items.isEmpty else {
+            errorText = "没有可用的秒传凭证（支持 .cas / .cas.torrent / .cas.zip）"
+            return
+        }
+        var ok = 0
+        for (index, pair) in items.enumerated() {
+            uploadLabel = "[\(index + 1)/\(items.count)] \(pair.item.name)"
+            do {
+                let r: RapidResult
+                if space == .personal {
+                    r = try await client.rapidUpload(pair.item, parentFolderId: folderId)
+                } else {
+                    guard !familyId.isEmpty else { throw CASError.missing("未连接家庭云") }
+                    r = try await client.familyRapidUpload(pair.item, familyId: familyId,
+                                                           parentFolderId: folderId)
+                }
+                if r.ok { ok += 1 }
+                append("\(pair.item.name)（\(pair.kind)）→ \(r.ok ? "秒传成功" : "未命中：\(r.message)")")
+            } catch {
+                append("\(pair.item.name) 失败：\(error.localizedDescription)")
+                if isSessionExpired(error) { needsRelogin = true; break }
+            }
+        }
+        append("凭证秒传 \(ok)/\(items.count)")
+        await refresh(space: space, target: folderId)
+    }
+
+    /// 分享转存到指定位置（目前仅个人云支持）
+    func importShareTo(_ text: String, space: CloudSpace, folderId: String) async {
+        guard space == .personal else {
+            errorText = "服务端不支持把他人分享直接转存到家庭云，请先转到个人云再复制"
+            return
+        }
+        let raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return }
+        busy = true; errorText = nil
+        defer { busy = false }
+        do {
+            let parsed = Cloud189Client.extractShareLink(from: raw)
+            let code = parsed?.code ?? raw
+            let pwd = parsed?.accessCode ?? ""
+            let info = try await client.shareInfo(code: code, accessCode: pwd)
+            append("分享内容：\(info.fileName) → 目录 \(folderId)")
+            let r = try await client.saveShare(info: info, targetFolderId: folderId, accessCode: pwd)
+            if let taskId = r["taskId"] as? String {
+                append("转存任务 \(taskId) 已提交")
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                let st = try await client.checkShareSaveTask(taskId: taskId)
+                append("状态 \(st["taskStatus"] ?? "?")：成功 \(st["successedCount"] ?? "0") / 失败 \(st["failedCount"] ?? "0")")
+            }
+            await refresh(space: space, target: folderId)
+        } catch {
+            errorText = error.localizedDescription
+            append("转存失败：\(error.localizedDescription)")
+        }
+    }
+
+    private func refresh(space: CloudSpace, target: String) async {
+        switch space {
+        case .personal:
+            if target == folderId { await load(target) }
+        case .family:
+            if target == familyFolderId { await loadFamily(target) }
+        }
+    }
 }

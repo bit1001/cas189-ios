@@ -319,3 +319,39 @@ extension Cloud189Client {
         return last
     }
 }
+
+// MARK: - 家庭云 文件管理
+
+extension Cloud189Client {
+
+    /// 家庭云重命名（实测：返回改名后的文件对象）
+    public func familyRename(fileId: String, to newName: String, familyId: String) async throws {
+        let json = try await familyGet("/open/family/file/renameFile.action", params: [
+            ("familyId", familyId),
+            ("fileId", fileId),
+            ("destFileName", newName)
+        ])
+        if let code = json["errorCode"] as? String, !code.isEmpty {
+            throw CASError.api(code: code, message: (json["errorMsg"] as? String) ?? "")
+        }
+    }
+
+    /// 家庭云删除
+    public func familyDelete(fileId: String, familyId: String) async throws {
+        let json = try await familyGet("/open/family/file/deleteFile.action", params: [
+            ("familyId", familyId),
+            ("fileId", fileId)
+        ])
+        if let code = json["errorCode"] as? String, !code.isEmpty {
+            throw CASError.api(code: code, message: (json["errorMsg"] as? String) ?? "")
+        }
+    }
+
+    /// 任意空间的目录列表（给目录选择器用）
+    public func entries(space: String, folderId: String, familyId: String) async throws -> [CloudEntry] {
+        if space == "family" {
+            return try await familyList(folderId: folderId, familyId: familyId)
+        }
+        return try await listEntries(folderId: folderId)
+    }
+}

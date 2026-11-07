@@ -2,6 +2,13 @@ import Foundation
 import SwiftUI
 import CAS189Core
 
+enum CloudSpace: String, CaseIterable, Identifiable {
+    case personal = "个人云"
+    case family = "家庭云"
+    var id: String { rawValue }
+    var key: String { self == .personal ? "personal" : "family" }
+}
+
 struct FolderCrumb: Hashable {
     let id: String
     let name: String
@@ -34,6 +41,8 @@ final class Store: ObservableObject {
     @Published var currentFolderName = "根目录"
     @Published var familyCrumbs: [FolderCrumb] = []
     @Published var familyFolderName = "根目录"
+    /// 当前浏览的空间
+    @Published var space: CloudSpace = .personal
 
     let client: Cloud189Client
 
@@ -166,6 +175,106 @@ final class Store: ObservableObject {
         } catch {
             errorText = error.localizedDescription
             append("秒传失败：\(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - 当前空间
+
+    var activeEntries: [CloudEntry] { space == .personal ? entries : familyEntries }
+    var activeFolderId: String { space == .personal ? folderId : familyFolderId }
+    var activeFolderName: String { space == .personal ? currentFolderName : familyFolderName }
+    var activeCrumbs: [FolderCrumb] { space == .personal ? crumbs : familyCrumbs }
+    var activeBusy: Bool { space == .personal ? busy : familyBusy }
+
+    func switchSpace(_ new: CloudSpace) async {
+        space = new
+        if new == .personal {
+            if entries.isEmpty { await load("-11") }
+        } else {
+            if familyId.isEmpty { await loadFamilyRoot() }
+            else if familyEntries.isEmpty { await loadFamily(familyFolderId) }
+        }
+    }
+
+    /// 进目录（自动分派到当前空间，并记录历史）
+    func openEntry(_ entry: CloudEntry) async {
+        guard entry.isFolder else { return }
+        switch space {
+        case .personal: await openFolder(entry)
+        case .family: await familyOpen(entry)
+        }
+    }
+
+    func navBack() async {
+        switch space {
+        case .personal: await goBack()
+        case .family: await familyGoBack()
+        }
+    }
+
+    func navRoot() async {
+        switch space {
+        case .personal: await goRoot()
+        case .family: await familyGoRoot()
+        }
+    }
+
+    func refreshActive() async {
+        switch space {
+        case .personal: await load(folderId)
+        case .family: await loadFamily(familyFolderId)
+        }
+    }
+
+    func deleteEntry(_ entry: CloudEntry) async {
+        switch space {
+        case .personal:
+            await delete(entry)
+        case .family:
+            guard !familyId.isEmpty else { return }
+            familyBusy = true; errorText = nil
+            defer { familyBusy = false }
+            do {
+                try await client.familyDelete(fileId: entry.id, familyId: familyId)
+                append("家庭云已删除 \(entry.name)")
+                await loadFamily(familyFolderId)
+            } catch {
+                errorText = error.localizedDescription
+                append("删除失败：\(error.localizedDescription)")
+            }
+        }
+    }
+
+    func renameEntry(_ entry: CloudEntry, to newName: String) async {
+        switch space {
+        case .personal:
+            await rename(entry, to: newName)
+        case .family:
+            guard !familyId.isEmpty else { return }
+            familyBusy = true; errorText = nil
+            defer { familyBusy = false }
+            do {
+                try await client.familyRename(fileId: entry.id, to: newName, familyId: familyId)
+                append("家庭云已重命名 \(entry.name) → \(newName)")
+                await loadFamily(familyFolderId)
+            } catch {
+                errorText = error.localizedDescription
+                append("重命名失败：\(error.localizedDescription)")
+            }
+        }
+    }
+
+    func makeFolderInActive(_ name: String) async {
+        switch space {
+        case .personal: await makeFolder(name)
+        case .family: await familyMakeFolder(name)
+        }
+    }
+
+    func downloadEntry(_ entry: CloudEntry) async {
+        switch space {
+        case .personal: await download(entry)
+        case .family: await downloadFamily(entry)
         }
     }
 
