@@ -14,8 +14,6 @@ final class Store: ObservableObject {
     @Published var searchText: String = ""
     @Published var searchResults: [CloudEntry] = []
     @Published var isSearching = false
-    @Published var needsRelogin = false
-    @Published var lastShare: ShareLink?
     @Published var errorText: String?
 
     let client: Cloud189Client
@@ -180,61 +178,5 @@ final class Store: ObservableObject {
         let hits = await client.search(kw, folderId: folderId)
         searchResults = hits
         append("搜索「\(kw)」命中 \(hits.count) 项")
-    }
-
-    // MARK: - 批量 / 分享 / 会话
-
-    func uploadMany(_ urls: [URL]) async {
-        guard !urls.isEmpty else { return }
-        busy = true; errorText = nil
-        defer { busy = false; uploadProgress = 0; uploadLabel = "" }
-        var ok = 0
-        for (index, url) in urls.enumerated() {
-            uploadLabel = "[\(index + 1)/\(urls.count)] \(url.lastPathComponent)"
-            do {
-                let accessing = url.startAccessingSecurityScopedResource()
-                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                let r = try await client.uploadFile(at: url, name: url.lastPathComponent,
-                                                    parentFolderId: folderId) { done, total in
-                    Task { @MainActor [weak self] in
-                        self?.uploadProgress = total > 0 ? Double(done) / Double(total) : 0
-                    }
-                }
-                if r.ok { ok += 1 }
-                append("\(url.lastPathComponent) → \(r.ok ? "成功" : "失败")")
-            } catch {
-                append("\(url.lastPathComponent) 失败：\(error.localizedDescription)")
-                if isSessionExpired(error) { needsRelogin = true; break }
-            }
-        }
-        append("批量完成 \(ok)/\(urls.count)")
-        await load(folderId)
-    }
-
-    func createShare(for entry: CloudEntry) async {
-        busy = true; errorText = nil
-        defer { busy = false }
-        do {
-            let link = try await client.createShare(fileId: entry.id)
-            lastShare = link
-            append("已创建分享：\(link.url) 提取码 \(link.accessCode)")
-        } catch {
-            errorText = error.localizedDescription
-            append("创建分享失败：\(error.localizedDescription)")
-            if isSessionExpired(error) { needsRelogin = true }
-        }
-    }
-
-    func isSessionExpired(_ error: Error) -> Bool {
-        if case CASError.sessionExpired = error { return true }
-        let text = error.localizedDescription
-        return text.contains("登录") || text.contains("session") || text.contains("SessionKey")
-    }
-
-    func relogin() {
-        needsRelogin = false
-        SessionStore.clear()
-        session = Session()
-        entries = []
     }
 }
