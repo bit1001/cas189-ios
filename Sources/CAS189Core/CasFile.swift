@@ -28,6 +28,12 @@ public enum CasFile {
 
     /// 解析 `.cas` 文本
     public static func parse(json data: Data, fallbackName: String = "") throws -> CasItem {
+        var data = data
+        // 去掉 UTF-8 BOM（有些 Windows 工具导出的 .cas 带 BOM，JSONSerialization 会报错）
+        if data.count >= 3, data[data.startIndex] == 0xEF,
+           data[data.startIndex + 1] == 0xBB, data[data.startIndex + 2] == 0xBF {
+            data = data.subdata(in: (data.startIndex + 3)..<data.endIndex)
+        }
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw FormatError(message: "不是合法的 .cas JSON")
         }
@@ -104,6 +110,29 @@ public enum CasFile {
     }
 
     // MARK: - .cas.zip
+
+    /// 压缩包里的**所有文件条目**（不做扩展名过滤）。
+    /// 凭证包通常就叫 `xxx.zip`，里面文件也可能不带 `.cas` 后缀，
+    /// 是否需要某个条目由调用方按内容判断。
+    public static func allEntries(inArchive url: URL) throws -> [(name: String, data: Data)] {
+        #if canImport(ZIPFoundation)
+        guard let archive = Archive(url: url, accessMode: .read) else {
+            throw FormatError(message: "无法打开压缩包（仅支持 ZIP，RAR/7z 请先自行解压）")
+        }
+        var out: [(String, Data)] = []
+        for entry in archive where entry.type == .file {
+            if entry.path.hasPrefix("__MACOSX/") { continue }
+            let base = (entry.path as NSString).lastPathComponent
+            if base == ".DS_Store" || base.isEmpty { continue }
+            var data = Data()
+            _ = try archive.extract(entry) { data.append($0) }
+            out.append((base, data))
+        }
+        return out
+        #else
+        throw FormatError(message: "当前平台未编译 ZIP 支持")
+        #endif
+    }
 
     /// 从压缩包里取出所有 `.cas` / `.cas.torrent` 条目（跳过目录与其他文件）
     public static func entries(inArchive url: URL) throws -> [(name: String, data: Data)] {

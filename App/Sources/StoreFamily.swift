@@ -254,39 +254,39 @@ extension Store {
         for url in urls {
             let access = url.startAccessingSecurityScopedResource()
             defer { if access { url.stopAccessingSecurityScopedResource() } }
+            let lower = url.lastPathComponent.lowercased()
             do {
                 let data = try Data(contentsOf: url)
-                let name = url.lastPathComponent.lowercased()
-                if name.hasSuffix(".torrent") {
-                    items.append((try CasTorrent.parse(data), "torrent"))
-                } else if name.hasSuffix(".cas") {
-                    items.append((try CasFile.parse(data: data, fileName: url.lastPathComponent), "cas"))
-                } else if name.hasSuffix(".zip") {
-                    // 凭证包里只认 .cas / .torrent，其他条目（readme、视频、__MACOSX…）直接跳过；
-                    // 单个条目坏了也不该让整包失败。
-                    let entries = try CasFile.entries(inArchive: url)
+                if lower.hasSuffix(".zip") {
+                    // 凭证包就是普通 .zip：里面可能装多个 .cas，也可能不带 .cas 后缀。
+                    // 按「逐个条目当 .cas 解析」处理，坏的条目跳过不影响其他。
+                    let entries = try CasFile.allEntries(inArchive: url)
                     var used = 0
                     for e in entries {
                         let inner = e.name.lowercased()
-                        do {
-                            if inner.hasSuffix(".torrent") {
-                                items.append((try CasTorrent.parse(e.data), "torrent"))
-                                used += 1
-                            } else if inner.hasSuffix(".cas") {
-                                items.append((try CasFile.parse(data: e.data, fileName: e.name), "cas"))
-                                used += 1
+                        if inner.hasSuffix(".torrent") {
+                            if let item = try? CasTorrent.parse(e.data) {
+                                items.append((item, "torrent")); used += 1
                             } else {
-                                append("  zip 内跳过 \(e.name)")
+                                append("  zip 内 \(e.name) 不是合法种子，跳过")
                             }
-                        } catch {
-                            append("  \(e.name) 解析失败：\(error.localizedDescription)")
+                        } else if let item = try? CasFile.parse(data: e.data, fileName: e.name) {
+                            items.append((item, "cas")); used += 1
+                        } else {
+                            append("  zip 内跳过 \(e.name)（不是 .cas 凭证）")
                         }
                     }
+                    append("\(url.lastPathComponent)：\(entries.count) 个条目，认出 \(used) 个凭证")
                     if used == 0 {
-                        append("\(url.lastPathComponent) 里没有 .cas / .torrent（普通压缩包不能秒传）")
+                        append("  这个压缩包里没有 .cas 凭证，不能秒传")
                     }
+                } else if lower.hasSuffix(".torrent") {
+                    items.append((try CasTorrent.parse(data), "torrent"))
+                } else if let item = try? CasFile.parse(data: data, fileName: url.lastPathComponent) {
+                    // 没后缀 / 后缀不标准也按 .cas 试一次（选了「导入秒传」就应该当凭证处理）
+                    items.append((item, "cas"))
                 } else {
-                    append("跳过 \(url.lastPathComponent)（不是 .cas / .torrent / .zip）")
+                    append("跳过 \(url.lastPathComponent)（不是 .cas 凭证）")
                 }
             } catch {
                 append("\(url.lastPathComponent) 读取失败：\(error.localizedDescription)")

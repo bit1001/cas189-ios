@@ -262,9 +262,18 @@ case "rapid-zip":
     guard let path = arg("--file") else { die("用法: cas189 rapid-zip --file <x.cas.zip> [--folder -11]") }
     do {
         let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-        let entries = try CasFile.entries(inArchive: url)
-        guard !entries.isEmpty else { die("压缩包内没有 .cas 文件") }
-        print("压缩包内 \(entries.count) 个凭证")
+        // 凭证包就是普通 .zip，条目未必带 .cas 后缀 → 全条目按内容判断
+        let all = try CasFile.allEntries(inArchive: url)
+        var entries: [(name: String, data: Data)] = []
+        for e in all {
+            if e.name.lowercased().hasSuffix(".torrent") && (try? CasTorrent.parse(e.data)) != nil {
+                entries.append(e)
+            } else if (try? CasFile.parse(data: e.data, fileName: e.name)) != nil {
+                entries.append(e)
+            }
+        }
+        guard !entries.isEmpty else { die("压缩包内没有可用的 .cas 凭证（\(all.count) 个条目都不是）") }
+        print("压缩包内 \(all.count) 个条目，认出 \(entries.count) 个凭证")
         let client = try await authed()
         let folder = arg("--folder") ?? "-11"
         var ok = 0
