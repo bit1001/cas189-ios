@@ -361,6 +361,47 @@ case "family-mkdir":
         print("✓ 已创建 \(name)  id=\(id)")
     } catch { die(error.localizedDescription) }
 
+case "share-info":
+    guard let code = arg("--code") else { die("用法: cas189 share-info --code <分享码或链接>") }
+    do {
+        let client = try await authed()
+        let parsed = Cloud189Client.extractShareLink(from: code)
+        let c = parsed?.code ?? code
+        let info = try await client.shareInfo(code: c, accessCode: parsed?.accessCode ?? arg("--pwd") ?? "")
+        print("分享者文件: \(info.fileName)  \(info.fileSize) 字节")
+        print("shareId:   \(info.shareId)")
+        print("fileId:    \(info.fileId)")
+        print("是文件夹:  \(info.isFolder)   需要提取码: \(info.needAccessCode)")
+        if info.isFolder {
+            let items = try await client.shareList(info: info, accessCode: parsed?.accessCode ?? "")
+            print("目录内容 \(items.count) 项:")
+            for e in items.prefix(20) { print("  \(e.isFolder ? "📁" : "📄") \(e.name)") }
+        }
+    } catch { die(error.localizedDescription) }
+
+case "share-save":
+    guard let code = arg("--code") else { die("用法: cas189 share-save --code <分享码> [--to -11] [--pwd 提取码]") }
+    do {
+        let client = try await authed()
+        let parsed = Cloud189Client.extractShareLink(from: code)
+        let c = parsed?.code ?? code
+        let pwd = parsed?.accessCode ?? arg("--pwd") ?? ""
+        let info = try await client.shareInfo(code: c, accessCode: pwd)
+        print("准备转存: \(info.fileName) → 目录 \(arg("--to") ?? "-11")")
+        let r = try await client.saveShare(info: info,
+                                           fileIds: arg("--file-id").map { [$0] },
+                                           targetFolderId: arg("--to") ?? "-11",
+                                           accessCode: pwd)
+        if let taskId = r["taskId"] as? String {
+            print("✓ 已提交转存任务 taskId=\(taskId)")
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            let st = try await client.checkShareSaveTask(taskId: taskId)
+            print("任务状态: \(st)")
+        } else {
+            print("✓ 已提交：\(r)")
+        }
+    } catch { die(error.localizedDescription) }
+
 case "raw":
     // 调试用：直接打一个签名接口，把原始 JSON 打出来
     guard let uri = arg("--uri") else { die("用法: cas189 raw --uri /person/xxx [--params a=1&b=2]") }
@@ -433,5 +474,7 @@ default:
       swift run cas189 family-upload --file <文件>         上传到家庭云
       swift run cas189 family-rapid --file <凭证>          家庭云秒传
       swift run cas189 family-mkdir --name <名字>          家庭云新建文件夹
+      swift run cas189 share-info --code <分享码>          解析分享链接
+      swift run cas189 share-save --code <分享码>          转存到自己的云盘
     """)
 }
