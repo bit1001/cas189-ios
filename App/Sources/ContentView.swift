@@ -19,6 +19,10 @@ struct ContentView: View {
     @State private var showImporter = false
     @State private var tab = 0
     @State private var showLogin = false
+    @State private var renameTarget: CloudEntry?
+    @State private var renameText = ""
+    @State private var showNewFolder = false
+    @State private var newFolderName = ""
 
     var body: some View {
         TabView(selection: $tab) {
@@ -121,8 +125,8 @@ struct ContentView: View {
                     Text("会对文件做 10MB 分片 MD5，再用 initMultiUpload / commitMultiUploadFile 判定秒传。")
                 }
 
-                Section("目录（\(store.folderId)）") {
-                    ForEach(store.entries) { entry in
+                Section(store.searchText.isEmpty ? "目录（\(store.folderId)）" : "搜索结果（\(store.searchResults.count)）") {
+                    ForEach(store.searchText.isEmpty ? store.entries : store.searchResults) { entry in
                         HStack {
                             Image(systemName: entry.isFolder ? "folder" : "doc")
                                 .foregroundStyle(entry.isFolder ? .blue : .secondary)
@@ -141,6 +145,20 @@ struct ContentView: View {
                                     .buttonStyle(.plain)
                             }
                         }
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                Task { await store.delete(entry) }
+                            } label: { Label("删除", systemImage: "trash") }
+                        }
+                        .contextMenu {
+                            Button {
+                                renameTarget = entry
+                                renameText = entry.name
+                            } label: { Label("重命名", systemImage: "pencil") }
+                            Button(role: .destructive) {
+                                Task { await store.delete(entry) }
+                            } label: { Label("删除", systemImage: "trash") }
+                        }
                     }
                 }
             }
@@ -151,8 +169,41 @@ struct ContentView: View {
                         Task { await store.load("-11") }
                     } label: { Image(systemName: "arrow.clockwise") }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        newFolderName = ""
+                        showNewFolder = true
+                    } label: { Image(systemName: "folder.badge.plus") }
+                }
             }
             .refreshable { await store.load(store.folderId) }
+            .searchable(text: $store.searchText, prompt: "搜索云盘（递归 3 层）")
+            .onSubmit(of: .search) {
+                Task { await store.search(store.searchText) }
+            }
+            .onChange(of: store.searchText) { newValue in
+                if newValue.isEmpty { store.searchResults = [] }
+            }
+            .alert("重命名", isPresented: Binding(
+                get: { renameTarget != nil },
+                set: { if !$0 { renameTarget = nil } }
+            )) {
+                TextField("新名字", text: $renameText)
+                Button("取消", role: .cancel) { renameTarget = nil }
+                Button("确定") {
+                    if let target = renameTarget {
+                        Task { await store.rename(target, to: renameText) }
+                    }
+                    renameTarget = nil
+                }
+            }
+            .alert("新建文件夹", isPresented: $showNewFolder) {
+                TextField("名字", text: $newFolderName)
+                Button("取消", role: .cancel) { }
+                Button("创建") {
+                    Task { await store.makeFolder(newFolderName) }
+                }
+            }
         }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.item]) { result in
             switch result {

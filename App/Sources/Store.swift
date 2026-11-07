@@ -11,6 +11,9 @@ final class Store: ObservableObject {
     @Published var busy = false
     @Published var uploadProgress: Double = 0
     @Published var uploadLabel: String = ""
+    @Published var searchText: String = ""
+    @Published var searchResults: [CloudEntry] = []
+    @Published var isSearching = false
     @Published var errorText: String?
 
     let client: Cloud189Client
@@ -124,5 +127,56 @@ final class Store: ObservableObject {
             errorText = error.localizedDescription
             append("秒传失败：\(error.localizedDescription)")
         }
+    }
+
+    // MARK: - 文件管理
+
+    func delete(_ entry: CloudEntry) async {
+        busy = true; errorText = nil
+        defer { busy = false }
+        do {
+            try await client.deleteFiles([entry.id])
+            append("已删除 \(entry.name)")
+            await load(folderId)
+        } catch {
+            errorText = error.localizedDescription
+            append("删除失败：\(error.localizedDescription)")
+        }
+    }
+
+    func rename(_ entry: CloudEntry, to newName: String) async {
+        busy = true; errorText = nil
+        defer { busy = false }
+        do {
+            try await client.rename(fileId: entry.id, to: newName)
+            append("已重命名 \(entry.name) → \(newName)")
+            await load(folderId)
+        } catch {
+            errorText = error.localizedDescription
+            append("重命名失败：\(error.localizedDescription)")
+        }
+    }
+
+    func makeFolder(_ name: String) async {
+        busy = true; errorText = nil
+        defer { busy = false }
+        do {
+            let id = try await client.createFolder(name: name, parentId: folderId)
+            append("新建文件夹 \(name)（\(id)）")
+            await load(folderId)
+        } catch {
+            errorText = error.localizedDescription
+            append("新建失败：\(error.localizedDescription)")
+        }
+    }
+
+    func search(_ keyword: String) async {
+        let kw = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !kw.isEmpty else { searchResults = []; return }
+        isSearching = true
+        defer { isSearching = false }
+        let hits = await client.search(kw, folderId: folderId)
+        searchResults = hits
+        append("搜索「\(kw)」命中 \(hits.count) 项")
     }
 }

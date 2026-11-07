@@ -228,19 +228,13 @@ public actor Cloud189Client {
     }
 
     public func createFolder(name: String, parentId: String = "-11") async throws -> String {
-        var comps = URLComponents(string: C.webURL + "/api/open/file/createFolder.action")!
-        comps.queryItems = [
-            .init(name: "folderName", value: name),
-            .init(name: "parentFolderId", value: parentId)
-        ]
-        let res = try await transport.request(comps.url!, method: "POST",
-                                              headers: ["Referer": C.referer],
-                                              body: Data())
-        let json = try res.json()
-        if let code = json["res_code"] as? Int, code != 0 {
-            throw CASError.api(code: String(code), message: (json["res_message"] as? String) ?? "")
+        // 网页接口返回 XML：<folder><id>..</id>..</folder>
+        let data = try await webGetData("/api/open/file/createFolder.action",
+                                        [("folderName", name), ("parentFolderId", parentId)])
+        if let err = Self.xmlError(data) {
+            throw CASError.api(code: err.0, message: err.1)
         }
-        return (json["id"] as? String) ?? ""
+        return try WebListParser.parse(data).first?.id ?? ""
     }
 
     // MARK: - 秒传（签名通道）

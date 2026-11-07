@@ -39,6 +39,13 @@ func human(_ bytes: Int64) -> String {
     ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
 }
 
+func authed() async throws -> Cloud189Client {
+    guard let saved = loadSession() else { die("未登录，先执行 cas189 login") }
+    let c = Cloud189Client()
+    await c.restore(session: saved)
+    return c
+}
+
 let command = CommandLine.arguments.dropFirst().first ?? "help"
 
 switch command {
@@ -115,6 +122,35 @@ case "upload":
         die(error.localizedDescription)
     }
 
+case "rm":
+    guard let id = arg("--id") else { die("用法: cas189 rm --id <fileId>") }
+    let client = try await authed()
+    do { try await client.deleteFiles([id]); print("✓ 已删除 \(id)") }
+    catch { die(error.localizedDescription) }
+
+case "rename":
+    guard let id = arg("--id"), let name = arg("--name") else { die("用法: cas189 rename --id <fileId> --name <新名字>") }
+    let client = try await authed()
+    do {
+        let e = try await client.rename(fileId: id, to: name)
+        print("✓ 已重命名为 \(e?.name ?? name)")
+    } catch { die(error.localizedDescription) }
+
+case "mkdir":
+    guard let name = arg("--name") else { die("用法: cas189 mkdir --name <名字> [--folder -11]") }
+    let client = try await authed()
+    do { print("✓ 已创建，folderId=\(try await client.createFolder(name: name, parentId: arg("--folder") ?? "-11"))") }
+    catch { die(error.localizedDescription) }
+
+case "search":
+    guard let kw = arg("--keyword") else { die("用法: cas189 search --keyword <关键词> [--folder -11]") }
+    let client = try await authed()
+    let hits = await client.search(kw, folderId: arg("--folder") ?? "-11")
+    print("命中 \(hits.count) 项：")
+    for e in hits.prefix(50) {
+        print("  \(e.isFolder ? "📁" : "📄") \(e.name)  [\(human(e.size))]  id=\(e.id)")
+    }
+
 case "raw":
     // 调试用：直接打一个签名接口，把原始 JSON 打出来
     guard let uri = arg("--uri") else { die("用法: cas189 raw --uri /person/xxx [--params a=1&b=2]") }
@@ -168,5 +204,9 @@ default:
       swift run cas189 rapid --file <路径> [--folder -11]   秒传本地文件
       swift run cas189 upload --file <路径> [--folder -11]  真实分片上传（秒传未命中时的兜底）
       swift run cas189 raw --uri /person/xxx [--params a=1&b=2]  调试：直接打签名接口
+      swift run cas189 rm --id <fileId>                    删除
+      swift run cas189 rename --id <id> --name <新名>       重命名
+      swift run cas189 mkdir --name <名字> [--folder -11]   新建文件夹
+      swift run cas189 search --keyword <关键词>            递归搜索
     """)
 }
