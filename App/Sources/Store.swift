@@ -15,6 +15,7 @@ final class Store: ObservableObject {
     @Published var searchResults: [CloudEntry] = []
     @Published var isSearching = false
     @Published var errorText: String?
+    @Published var lastShareText: String?
 
     let client: Cloud189Client
 
@@ -178,5 +179,20 @@ final class Store: ObservableObject {
         let hits = await client.search(kw, folderId: folderId)
         searchResults = hits
         append("搜索「\(kw)」命中 \(hits.count) 项")
+    }
+
+    // MARK: - 分享（用 String 而非 ShareLink，避免 iOS target 引用问题）
+
+    func createShare(for entry: CloudEntry) async {
+        busy = true; errorText = nil
+        defer { busy = false }
+        do {
+            let link = try await client.createShare(fileId: entry.id)
+            lastShareText = link.shareText
+            append("已创建分享：\(link.url) 提取码 \(link.accessCode)")
+        } catch {
+            errorText = error.localizedDescription
+            append("创建分享失败：\(error.localizedDescription)")
+        }
     }
 }
