@@ -337,7 +337,11 @@ extension Store {
 
     /// 选择文件 → 上传（先试秒传，未命中转真实上传）
     func uploadTo(_ urls: [URL], space: CloudSpace, folderId: String) async {
-        guard !urls.isEmpty else { return }
+        guard !urls.isEmpty else {
+            append("上传：没有收到文件")
+            return
+        }
+        append("开始上传 \(urls.count) 个文件 → \(space.rawValue) / \(folderId)")
         busy = true; errorText = nil
         defer { busy = false; uploadProgress = 0; uploadLabel = "" }
         var ok = 0
@@ -401,6 +405,7 @@ extension Store {
 
     /// 凭证（.cas / .torrent / .zip）秒传到指定位置
     func importCredentialsTo(_ urls: [URL], space: CloudSpace, folderId: String) async {
+        append("开始解析 \(urls.count) 个凭证文件 → \(space.rawValue) / \(folderId)")
         busy = true; errorText = nil
         defer { busy = false; uploadLabel = "" }
         let items = parseCredentials(urls)
