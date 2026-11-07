@@ -53,6 +53,16 @@ struct ContentView: View {
         }
     }
 
+    /// 可执行文件的修改时间 = 这次包是什么时候打出来的
+    private static var buildTimeText: String {
+        guard let url = Bundle.main.executableURL,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let date = attrs[.modificationDate] as? Date else { return "未知" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MM-dd HH:mm"
+        return formatter.string(from: date)
+    }
+
     // MARK: - 登录
 
     private var loginTab: some View {
@@ -65,6 +75,8 @@ struct ContentView: View {
                     } else {
                         Text("未登录").foregroundStyle(.secondary)
                     }
+                    // 用来确认装的是哪一次构建
+                    LabeledContent("构建时间", value: Self.buildTimeText)
                 } header: {
                     Text("状态")
                 }

@@ -11,13 +11,32 @@ struct TransferView: View {
     @State private var targetFolderName = "根目录"
     @State private var showFolderPicker = false
     @State private var shareText = ""
-    @State private var showImporter = false
-    @State private var mode: ImporterMode = .upload
+
 
     enum ImporterMode: Int, Identifiable {
         case upload = 0
         case credentials = 1
         var id: Int { rawValue }
+    }
+
+    /// 走 UIKit 原生选择器：SwiftUI 的 .fileImporter 在这台设备上完全不回调
+    private func pickFiles(mode chosen: ImporterMode) {
+        store.append("正在打开文件选择器…")
+        DocumentPickerCoordinator.pickFiles(allowsMultiple: true) { urls in
+            Task { @MainActor in
+                guard !urls.isEmpty else {
+                    store.append("已取消选择")
+                    return
+                }
+                store.append("已选择 \(urls.count) 个文件：\(urls.prefix(3).map(\.lastPathComponent).joined(separator: ", "))")
+                switch chosen {
+                case .upload:
+                    await store.uploadTo(urls, space: targetSpace, folderId: targetFolderId)
+                case .credentials:
+                    await store.importCredentialsTo(urls, space: targetSpace, folderId: targetFolderId)
+                }
+            }
+        }
     }
 
     var body: some View {
@@ -54,14 +73,12 @@ struct TransferView: View {
 
                 Section {
                     Button {
-                        mode = .upload
-                        showImporter = true
+                        pickFiles(mode: .upload)
                     } label: {
                         Label("选择文件上传（先试秒传，未命中转真实上传）", systemImage: "doc.badge.plus")
                     }
                     Button {
-                        mode = .credentials
-                        showImporter = true
+                        pickFiles(mode: .credentials)
                     } label: {
                         Label("导入秒传凭证（.cas / .torrent / .zip）", systemImage: "shippingbox")
                     }
@@ -115,30 +132,6 @@ struct TransferView: View {
                 }
             }
             .navigationTitle("导入")
-            .fileImporter(
-                isPresented: $showImporter,
-                allowedContentTypes: [.item, .data, .zip, .archive],
-                allowsMultipleSelection: true
-            ) { result in
-                switch result {
-                case let .success(urls):
-                    guard !urls.isEmpty else {
-                        store.append("没有选中文件")
-                        return
-                    }
-                    store.append("已选择 \(urls.count) 个文件：\(urls.prefix(3).map(\.lastPathComponent).joined(separator: ", "))")
-                    let chosen = mode
-                    switch chosen {
-                    case .upload:
-                        Task { await store.uploadTo(urls, space: targetSpace, folderId: targetFolderId) }
-                    case .credentials:
-                        Task { await store.importCredentialsTo(urls, space: targetSpace, folderId: targetFolderId) }
-                    }
-                case let .failure(error):
-                    store.errorText = "选择文件失败：\(error.localizedDescription)"
-                    store.append("选择文件失败：\(error.localizedDescription)")
-                }
-            }
             .alert("出错了", isPresented: Binding(
                 get: { store.errorText != nil },
                 set: { if !$0 { store.errorText = nil } }
