@@ -226,4 +226,107 @@ extension Store {
         append("凭证导入完成 \(ok)/\(items.count)")
         await load(folderId)
     }
+    // MARK: 家庭云导航
+
+    func familyOpen(_ entry: CloudEntry) async {
+        familyCrumbs.append(FolderCrumb(id: familyFolderId, name: familyFolderName))
+        familyFolderName = entry.name
+        await loadFamily(entry.id)
+    }
+
+    func familyGoBack() async {
+        guard let prev = familyCrumbs.popLast() else { return }
+        familyFolderName = prev.name
+        await loadFamily(prev.id)
+    }
+
+    func familyGoRoot() async {
+        familyCrumbs = []
+        familyFolderName = "根目录"
+        await loadFamily("-11")
+    }
+
+    // MARK: 家庭云秒传（凭证导入）
+
+    /// 解析 .cas / .cas.torrent / .cas.zip → CasItem
+    private func parseCredentials(_ urls: [URL]) -> [(item: CasItem, kind: String)] {
+        var items: [(CasItem, String)] = []
+        for url in urls {
+            let access = url.startAccessingSecurityScopedResource()
+            defer { if access { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let data = try Data(contentsOf: url)
+                let name = url.lastPathComponent.lowercased()
+                if name.hasSuffix(".torrent") {
+                    items.append((try CasTorrent.parse(data), "torrent"))
+                } else if name.hasSuffix(".cas") {
+                    items.append((try CasFile.parse(data: data, fileName: url.lastPathComponent), "cas"))
+                } else if name.hasSuffix(".zip") {
+                    for e in try CasFile.entries(inArchive: url) {
+                        if e.name.lowercased().hasSuffix(".torrent") {
+                            items.append((try CasTorrent.parse(e.data), "torrent"))
+                        } else {
+                            items.append((try CasFile.parse(data: e.data, fileName: e.name), "cas"))
+                        }
+                    }
+                } else {
+                    append("跳过 \(url.lastPathComponent)（不是 .cas / .torrent / .zip）")
+                }
+            } catch {
+                append("\(url.lastPathComponent) 读取失败：\(error.localizedDescription)")
+            }
+        }
+        return items
+    }
+
+    /// 家庭云秒传：只凭凭证，不上传文件
+    func familyImportCredentials(_ urls: [URL]) async {
+        guard !familyId.isEmpty else {
+            errorText = "请先连接家庭云"
+            return
+        }
+        familyBusy = true; errorText = nil
+        defer { familyBusy = false }
+        let items = parseCredentials(urls)
+        guard !items.isEmpty else {
+            errorText = "没有可用的秒传凭证"
+            return
+        }
+        var ok = 0
+        for (index, pair) in items.enumerated() {
+            uploadLabel = "家庭云 [\(index + 1)/\(items.count)] \(pair.item.name)"
+            do {
+                let r = try await client.familyRapidUpload(pair.item, familyId: familyId,
+                                                           parentFolderId: familyFolderId)
+                if r.ok { ok += 1 }
+                append("\(pair.item.name)（\(pair.kind)）→ \(r.ok ? "秒传成功" : "未命中：\(r.message)")")
+            } catch {
+                append("\(pair.item.name) 秒传失败：\(error.localizedDescription)")
+            }
+        }
+        uploadLabel = ""
+        append("家庭云凭证导入 \(ok)/\(items.count)")
+        await loadFamily(familyFolderId)
+    }
+
+    /// 家庭云文件 → 个人云
+    func familyTransferToPersonal(_ entry: CloudEntry) async {
+        guard !familyId.isEmpty, !entry.isFolder else { return }
+        familyBusy = true; errorText = nil
+        defer { familyBusy = false }
+        do {
+            append("转存 \(entry.name) → 个人云…")
+            let taskId = try await client.familyCopyToPersonal(fileId: entry.id,
+                                                              fileName: entry.name,
+                                                              familyId: familyId,
+                                                              targetFolderId: "-11")
+            let st = try await client.familyWaitTask(type: "COPY", taskId: taskId, familyId: familyId)
+            let okCount = (st["successedCount"] as? NSNumber)?.intValue ?? 0
+            append("转存完成：成功 \(okCount) 个（taskStatus \(st["taskStatus"] ?? "?"))")
+            await load("-11")
+        } catch {
+            errorText = error.localizedDescription
+            append("转存失败：\(error.localizedDescription)")
+        }
+    }
 }

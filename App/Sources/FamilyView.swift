@@ -8,6 +8,7 @@ struct FamilyView: View {
     @State private var showFolderPrompt = false
     @State private var folderName = ""
     @State private var showUploader = false
+    @State private var showCredentialImporter = false
 
     var body: some View {
         NavigationStack {
@@ -45,7 +46,7 @@ struct FamilyView: View {
                                 Spacer()
                                 if entry.isFolder {
                                     Button {
-                                        Task { await store.loadFamily(entry.id) }
+                                        Task { await store.familyOpen(entry) }
                                     } label: { Image(systemName: "chevron.right") }
                                         .buttonStyle(.plain)
                                 }
@@ -56,17 +57,26 @@ struct FamilyView: View {
                                     Button {
                                         Task { await store.downloadFamily(entry) }
                                     } label: { Label("下载", systemImage: "arrow.down.circle") }
+                                    Button {
+                                        Task { await store.familyTransferToPersonal(entry) }
+                                    } label: { Label("转存到个人云", systemImage: "arrow.uturn.left.circle") }
                                 }
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("家庭云")
+            .navigationTitle("家庭云 · \(store.familyFolderName)")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        Task { await store.loadFamily(store.familyFolderId) }
+                        Task { await store.familyGoBack() }
+                    } label: { Image(systemName: "chevron.backward") }
+                        .disabled(store.familyCrumbs.isEmpty || store.familyBusy)
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        Task { await store.familyGoRoot() }
                     } label: { Image(systemName: "arrow.clockwise") }
                         .disabled(store.familyBusy || store.familyId.isEmpty)
                 }
@@ -80,9 +90,22 @@ struct FamilyView: View {
                         showUploader = true
                     } label: { Image(systemName: "square.and.arrow.up") }
                         .disabled(store.familyId.isEmpty)
+                    Menu {
+                        Button {
+                            showCredentialImporter = true
+                        } label: { Label("导入秒传凭证", systemImage: "doc.badge.arrow.up") }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                        .disabled(store.familyId.isEmpty)
                 }
             }
             .refreshable { await store.loadFamily(store.familyFolderId) }
+            .fileImporter(isPresented: $showCredentialImporter,
+                          allowedContentTypes: [.item],
+                          allowsMultipleSelection: true) { result in
+                if case let .success(urls) = result, !urls.isEmpty {
+                    Task { await store.familyImportCredentials(urls) }
+                }
+            }
             .alert("新建文件夹", isPresented: $showFolderPrompt) {
                 TextField("名字", text: $folderName)
                 Button("取消", role: .cancel) { }

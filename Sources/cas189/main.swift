@@ -402,6 +402,23 @@ case "share-save":
         }
     } catch { die(error.localizedDescription) }
 
+case "family-copy":
+    guard let fid = arg("--id"), let name = arg("--name") else {
+        die("用法: cas189 family-copy --id <家庭云文件id> --name <文件名> [--family id] [--to -11]")
+    }
+    do {
+        let client = try await authed()
+        var fam = arg("--family") ?? ""
+        if fam.isEmpty { fam = try await client.familyInfo().first?.id ?? "" }
+        guard !fam.isEmpty else { die("该账号没有家庭云") }
+        let taskId = try await client.familyCopyToPersonal(fileId: fid, fileName: name,
+                                                           familyId: fam,
+                                                           targetFolderId: arg("--to") ?? "-11")
+        print("✓ 已提交 COPY 任务 \(taskId)")
+        let st = try await client.familyWaitTask(type: "COPY", taskId: taskId, familyId: fam)
+        print("任务状态: \(st)")
+    } catch { die(error.localizedDescription) }
+
 case "raw":
     // 调试用：直接打一个签名接口，把原始 JSON 打出来
     guard let uri = arg("--uri") else { die("用法: cas189 raw --uri /person/xxx [--params a=1&b=2]") }
@@ -476,5 +493,6 @@ default:
       swift run cas189 family-mkdir --name <名字>          家庭云新建文件夹
       swift run cas189 share-info --code <分享码>          解析分享链接
       swift run cas189 share-save --code <分享码>          转存到自己的云盘
+      swift run cas189 family-copy --id <id> --name <名字>  家庭云 → 个人云
     """)
 }

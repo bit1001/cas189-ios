@@ -162,7 +162,7 @@ struct ContentView: View {
                             Spacer()
                             if entry.isFolder {
                                 Button {
-                                    Task { await store.load(entry.id) }
+                                    Task { await store.openFolder(entry) }
                                 } label: { Image(systemName: "chevron.right") }
                                     .buttonStyle(.plain)
                             }
@@ -195,11 +195,19 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle(store.downloadLabel.isEmpty ? "云盘" : store.downloadLabel)
+            .navigationTitle(store.downloadLabel.isEmpty
+                             ? "云盘 · \(store.currentFolderName)"
+                             : store.downloadLabel)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        Task { await store.load("-11") }
+                        Task { await store.goBack() }
+                    } label: { Image(systemName: "chevron.backward") }
+                        .disabled(store.crumbs.isEmpty)
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        Task { await store.goRoot() }
                     } label: { Image(systemName: "arrow.clockwise") }
                 }
                 ToolbarItem(placement: .topBarTrailing) {

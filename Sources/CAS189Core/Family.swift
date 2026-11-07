@@ -219,3 +219,103 @@ extension Cloud189Client {
         throw lastError ?? CASError.api(code: "-1", message: "家庭云秒传失败")
     }
 }
+
+// MARK: - 家庭云 POST / 批量任务
+
+extension Cloud189Client {
+
+    /// POST 表单到 api.cloud.189.cn（签名包含表单参数，键值各自 URL 编码）
+    public func familyPost(_ path: String,
+                           params: [(String, String)]) async throws -> [String: Any] {
+        let token = try await fetchAccessToken()
+        let ts = String(Int(Date().timeIntervalSince1970 * 1000))
+        let sorted = params.sorted { $0.0 < $1.0 }
+
+        var signText = "AccessToken=\(token)&Timestamp=\(ts)"
+        for (k, v) in sorted { signText += "&\(k)=\(v)" }
+        let signature = CryptoTool.hexLower(CryptoTool.md5(Data(signText.utf8)))
+
+        let body = sorted
+            .map { "\(Self.formEncode($0.0))=\(Self.formEncode($0.1))" }
+            .joined(separator: "&")
+
+        let url = URL(string: "https://api.cloud.189.cn" + path)!
+        let res = try await transport.request(url, method: "POST", headers: [
+            "AccessToken": token,
+            "Sign-Type": "1",
+            "Signature": signature,
+            "Timestamp": ts,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json;charset=UTF-8"
+        ], body: body.data(using: .utf8))
+
+        debugLog?("familyPost \(path) HTTP \(res.status)")
+        if let text = String(data: res.body, encoding: .utf8),
+           text.trimmingCharacters(in: .whitespaces).hasPrefix("<") {
+            if let err = Self.xmlError(res.body) {
+                throw CASError.api(code: err.0, message: err.1)
+            }
+        }
+        return try res.json()
+    }
+
+    /// 家庭云文件转存到个人云（COPY，copyType=2）
+    /// 实测：taskStatus=4、successedCount=1，文件出现在个人云目标目录
+    @discardableResult
+    public func familyCopyToPersonal(fileId: String,
+                                     fileName: String,
+                                     familyId: String,
+                                     targetFolderId: String = "-11") async throws -> String {
+        let infos = [["fileId": fileId, "fileName": fileName, "isFolder": 0]] as [[String: Any]]
+        let jsonData = try JSONSerialization.data(withJSONObject: infos)
+        let jsonText = String(data: jsonData, encoding: .utf8) ?? "[]"
+
+        let json = try await familyPost("/open/batch/createBatchTask.action", params: [
+            ("type", "COPY"),
+            ("taskInfos", jsonText),
+            ("targetFolderId", targetFolderId),
+            ("familyId", familyId),
+            ("groupId", "null"),
+            ("copyType", "2"),
+            ("shareId", "null")
+        ])
+
+        let taskId = (json["taskId"] as? String)
+            ?? (json["taskId"] as? NSNumber)?.stringValue
+            ?? ""
+        guard !taskId.isEmpty else {
+            throw CASError.api(code: (json["res_code"] as? String) ?? "COPY",
+                               message: (json["res_message"] as? String) ?? "未取得 taskId")
+        }
+        return taskId
+    }
+
+    /// 查询家庭云批量任务
+    public func familyCheckTask(type: String, taskId: String, familyId: String) async throws -> [String: Any] {
+        try await familyPost("/open/batch/checkBatchTask.action", params: [
+            ("type", type),
+            ("taskId", taskId),
+            ("familyId", familyId)
+        ])
+    }
+
+    /// 轮询直到 taskStatus == 4 或子任务都有结果
+    public func familyWaitTask(type: String, taskId: String, familyId: String,
+                               timeoutSeconds: Double = 30) async throws -> [String: Any] {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        var last: [String: Any] = [:]
+        while Date() < deadline {
+            last = try await familyCheckTask(type: type, taskId: taskId, familyId: familyId)
+            let status = (last["taskStatus"] as? NSNumber)?.intValue
+                ?? Int((last["taskStatus"] as? String) ?? "") ?? 0
+            let done = ((last["successedCount"] as? NSNumber)?.intValue ?? 0)
+                     + ((last["failedCount"] as? NSNumber)?.intValue ?? 0)
+                     + ((last["skipCount"] as? NSNumber)?.intValue ?? 0)
+            let total = (last["subTaskCount"] as? NSNumber)?.intValue ?? 0
+            if status == 4 { return last }
+            if total > 0 && done >= total { return last }
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+        }
+        return last
+    }
+}

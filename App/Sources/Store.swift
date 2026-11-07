@@ -2,6 +2,11 @@ import Foundation
 import SwiftUI
 import CAS189Core
 
+struct FolderCrumb: Hashable {
+    let id: String
+    let name: String
+}
+
 @MainActor
 final class Store: ObservableObject {
     @Published var session: Session = Session()
@@ -24,6 +29,11 @@ final class Store: ObservableObject {
     @Published var familyEntries: [CloudEntry] = []
     @Published var familyFolderId = "-11"
     @Published var familyBusy = false
+    // 目录导航历史（用于返回上一级）
+    @Published var crumbs: [FolderCrumb] = []
+    @Published var currentFolderName = "根目录"
+    @Published var familyCrumbs: [FolderCrumb] = []
+    @Published var familyFolderName = "根目录"
 
     let client: Cloud189Client
 
@@ -75,6 +85,27 @@ final class Store: ObservableObject {
             errorText = error.localizedDescription
             append("登录失败：\(error.localizedDescription)")
         }
+    }
+
+    /// 进入子目录（记录历史，可返回）
+    func openFolder(_ entry: CloudEntry) async {
+        crumbs.append(FolderCrumb(id: folderId, name: currentFolderName))
+        currentFolderName = entry.name
+        await load(entry.id)
+    }
+
+    /// 返回上一级
+    func goBack() async {
+        guard let prev = crumbs.popLast() else { return }
+        currentFolderName = prev.name
+        await load(prev.id)
+    }
+
+    /// 回到根目录并清空历史
+    func goRoot() async {
+        crumbs = []
+        currentFolderName = "根目录"
+        await load("-11")
     }
 
     func load(_ folder: String) async {
