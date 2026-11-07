@@ -8,7 +8,8 @@ let package = Package(
         .macOS(.v13)
     ],
     products: [
-        .library(name: "CAS189Core", targets: ["CAS189Core"])
+        .library(name: "CAS189Core", targets: ["CAS189Core"]),
+        .executable(name: "cas189", targets: ["cas189"])
     ],
     dependencies: [
         // 跨平台 SHA1/MD5/HMAC（Apple 上是 CryptoKit 的替代，Linux 上也能用）
@@ -20,6 +21,10 @@ let package = Package(
             dependencies: [
                 .product(name: "Crypto", package: "swift-crypto")
             ]
+        ),
+        .executableTarget(
+            name: "cas189",
+            dependencies: ["CAS189Core"]
         ),
         .testTarget(
             name: "CAS189CoreTests",

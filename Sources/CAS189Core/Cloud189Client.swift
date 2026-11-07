@@ -22,6 +22,19 @@ public actor Cloud189Client {
         debugLog = handler
     }
 
+    /// 从已保存的状态恢复（CLI / App 冷启动用）
+    public func restore(session saved: Session) {
+        transport.setCookies(saved.cookies.map { "\($0.key)=\($0.value)" }.joined(separator: "; "))
+        session = saved
+    }
+
+    /// 导出当前状态（含 Cookie，调用方负责安全存储）
+    public func snapshot() -> Session {
+        var copy = session
+        copy.cookies = transport.cookies
+        return copy
+    }
+
     private func log(_ message: String) { debugLog?(message) }
 
     // MARK: - 登录：Cookie
@@ -81,7 +94,7 @@ public actor Cloud189Client {
                                                method: "POST",
                                                headers: ["Content-Type": "application/x-www-form-urlencoded"],
                                                body: confBody).json()
-        guard let pubKey = conf["pubKey"] as? String, let pkId = conf["pkId"] as? String else {
+        guard let pubKey = conf["pubKey"] as? String else {
             throw CASError.missing("登录公钥")
         }
         let rsaUser = try CryptoTool.rsaEncryptBase64(x509PubKeyB64: pubKey, plaintext: username)

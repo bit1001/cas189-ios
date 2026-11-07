@@ -85,9 +85,22 @@ public enum CryptoTool {
     throws -> SliceFingerprint {
         let size = (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
         let count = max(1, Int((size + Int64(sliceSize) - 1) / Int64(sliceSize)))
-        var parts = [String](repeating: "", count: count)
-        let lock = NSLock()
-        var cancelled = false
+        /// 用引用类型承载结果与取消标志，避免捕获 var 在并发块里可变
+        final class PartsBox: @unchecked Sendable {
+            private let lock = NSLock()
+            private var values: [String]
+            init(_ count: Int) { values = Array(repeating: "", count: count) }
+            func set(_ index: Int, _ value: String) { lock.withLock { values[index] = value } }
+            var all: [String] { lock.withLock { values } }
+        }
+        final class Flag: @unchecked Sendable {
+            private let lock = NSLock()
+            private var value = false
+            func set() { lock.withLock { value = true } }
+            var isSet: Bool { lock.withLock { value } }
+        }
+        let cancelled = Flag()
+        let box = PartsBox(count)
 
         let fileMD5 = try md5File(url)
 
@@ -95,25 +108,25 @@ public enum CryptoTool {
         queue.maxConcurrentOperationCount = max(1, threads)
         for index in 0..<count {
             queue.addOperation {
-                lock.lock(); let stop = cancelled; lock.unlock()
-                if stop { return }
+                if cancelled.isSet { return }
                 do {
                     let handle = try FileHandle(forReadingFrom: url)
                     defer { try? handle.close() }
                     try handle.seek(toOffset: UInt64(index * sliceSize))
                     let data = handle.readData(ofLength: sliceSize)
-                    parts[index] = sliceMD5(data)
+                    box.set(index, sliceMD5(data))
                     if let progress, progress(index + 1, count) == false {
-                        lock.lock(); cancelled = true; lock.unlock()
+                        cancelled.set()
                     }
                 } catch {
-                    lock.lock(); cancelled = true; lock.unlock()
+                    cancelled.set()
                 }
             }
         }
         queue.waitUntilAllOperationsAreFinished()
-        if cancelled { throw CASError.notDecompilable("指纹计算被取消或失败") }
+        if cancelled.isSet { throw CASError.notDecompilable("指纹计算被取消或失败") }
 
+        let parts = box.all
         let cloudMd5 = sliceMd5OfParts(parts)
         return SliceFingerprint(
             size: size,

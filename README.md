@@ -24,9 +24,26 @@ App/                       # SwiftUI 外壳（xcodegen 生成 Xcode 工程）
 ## 本地跑（Linux，无 Xcode）
 
 ```bash
-# 需要 Swift 6 工具链
-swift test
+export PATH=/opt/swift/usr/bin:$PATH     # Swift 6.0.3 已装在 /opt/swift
+swift build && swift test
 ```
+
+实测结果（Ubuntu 24.04 / Swift 6.0.3）：
+
+- `swift build` 零错误零告警
+- `swift test` **12/12 通过**（含 FIPS-197 AES 向量、RFC 2202 HMAC-SHA1）
+- CLI 指纹与 `md5sum`、独立 Python 实现逐字符一致
+
+## 命令行（不用 iPhone 也能验证真实接口）
+
+```bash
+swift run cas189 fingerprint --file ~/a.mp4          # 离线，只算 md5 + 10MB 分片 sliceMd5
+swift run cas189 login --cookie "COOKIE_LOGIN_USER=…" # 浏览器 Cookie 登录，会话存 ~/.cas189/session.json (600)
+swift run cas189 ls --folder -11                      # 列云盘目录
+swift run cas189 rapid --file ~/a.mp4                 # 秒传（未命中会明确提示需要真实上传）
+```
+
+`scan` / `share` / 真实分片上传还没接，见下方"未实现"。
 
 ## 出 app（需要 macOS 或 GitHub Actions）
 

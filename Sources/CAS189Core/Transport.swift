@@ -89,7 +89,7 @@ public final class Transport: NSObject, URLSessionTaskDelegate, @unchecked Senda
         if !cookie.isEmpty { req.setValue(cookie, forHTTPHeaderField: "Cookie") }
         if let body { req.httpBody = body }
 
-        lock.lock(); lastLocation = nil; lock.unlock()
+        lock.withLock { lastLocation = nil }
 
         let (data, response) = try await session.data(for: req)
         guard let http = response as? HTTPURLResponse else {
@@ -113,9 +113,7 @@ public final class Transport: NSObject, URLSessionTaskDelegate, @unchecked Senda
                            willPerformHTTPRedirection response: HTTPURLResponse,
                            newRequest request: URLRequest,
                            completionHandler: @escaping (URLRequest?) -> Void) {
-        lock.lock()
-        lastLocation = request.url?.absoluteString
-        lock.unlock()
+        lock.withLock { lastLocation = request.url?.absoluteString }
         completionHandler(nil)   // 不自动跟随，交给调用方决定
     }
 }

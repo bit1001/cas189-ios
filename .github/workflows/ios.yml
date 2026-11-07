@@ -12,6 +12,9 @@ jobs:
     container: swift:6.0
     steps:
       - uses: actions/checkout@v4
+      - name: Build all products
+        run: swift build
+
       - name: swift test
         run: swift test --parallel
 

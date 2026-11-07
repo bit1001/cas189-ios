@@ -61,7 +61,7 @@ public struct ShareResult: Sendable, Equatable {
 }
 
 /// 登录状态：sessionKey 用于签名接口，cookie 用于 web 接口
-public struct Session: Sendable, Equatable {
+public struct Session: Sendable, Equatable, Codable {
     public var sessionKey: String
     public var sessionSecret: String
     public var rsaPubKey: String
