@@ -145,6 +145,11 @@ struct ContentView: View {
             }
             .navigationTitle("日志")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("诊断环境") {
+                        for line in Diagnostics.lines() { store.append(line) }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("清空") { store.logs.removeAll() }
                 }
