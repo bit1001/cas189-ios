@@ -28,8 +28,8 @@ final class DocumentPickerCoordinator: NSObject, UIDocumentPickerDelegate {
         coordinator.finished = false
         shared = coordinator
 
-        // asCopy: true —— 导入模式，由系统把文件复制进沙盒
-        let picker = LoggingDocumentPicker(forOpeningContentTypes: [.item], asCopy: true)
+        // asCopy: false —— 打开模式：直接返回 security-scoped URL，不复制到 TMPDIR
+        let picker = LoggingDocumentPicker(forOpeningContentTypes: [.item], asCopy: false)
         picker.allowsMultipleSelection = allowsMultiple
         picker.shouldShowFileExtensions = true
         picker.delegate = coordinator
@@ -43,7 +43,7 @@ final class DocumentPickerCoordinator: NSObject, UIDocumentPickerDelegate {
             shared = nil
             return
         }
-        log("选择器已弹出（导入模式，可多选）")
+        log("选择器已弹出（打开模式，可多选）")
         host.present(picker, animated: true)
     }
 
@@ -68,7 +68,7 @@ final class DocumentPickerCoordinator: NSObject, UIDocumentPickerDelegate {
     fileprivate func pickerVanished() {
         guard !finished else { return }
         finish([], reason: "vanished")
-        logger?("选择器已关闭，但系统没返回文件")
+        logger?("选择器已关闭，但系统没返回文件 —— 请确认已在 LiveContainer 里长按 App → 设置 → 开启 Fix File Picker，并完全退出重开 App")
     }
 
     private func finish(_ urls: [URL], reason: String) {
