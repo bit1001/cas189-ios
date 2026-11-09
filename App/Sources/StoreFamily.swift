@@ -132,7 +132,7 @@ extension Store {
         do {
             let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             let dst = dir.appendingPathComponent(entry.name)
-            let n = try await client.download(fileId: entry.id, to: dst)
+            let n = try await client.download(fileId: entry.id, to: dst, familyId: familyId)
             downloadedFile = dst
             append("已下载 \(entry.name)（\(ByteCountFormatter.string(fromByteCount: n, countStyle: .file))）")
         } catch {

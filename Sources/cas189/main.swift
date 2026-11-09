@@ -297,7 +297,7 @@ case "get":
         let out = arg("--out") ?? (id + ".download")
         let dst = URL(fileURLWithPath: (out as NSString).expandingTildeInPath)
         var lastPct = -1
-        let n = try await client.download(fileId: id, to: dst) { done, total in
+        let n = try await client.download(fileId: id, to: dst, familyId: arg("--family-id")) { done, total in
             guard total > 0 else { return }
             let pct = Int(done * 100 / total)
             if pct >= lastPct + 10 { lastPct = pct; FileHandle.standardError.write(Data("  \(pct)%\n".utf8)) }

@@ -63,9 +63,14 @@ final class StreamingDownloader: NSObject, URLSessionDownloadDelegate, @unchecke
 extension Cloud189Client {
 
     /// 取下载直链。web 通道返回的 XML 里 URL 被 HTML 转义过（`&amp;`），必须反转义。
-    public func downloadURL(fileId: String) async throws -> URL {
-        let data = try await webGetData("/api/open/file/getFileDownloadUrl.action",
-                                        [("fileId", fileId)])
+    /// 家庭云文件必须带 familyId 且 type=1，否则直接报 PermissionDenied。
+    public func downloadURL(fileId: String, familyId: String? = nil) async throws -> URL {
+        var params: [(String, String)] = [("fileId", fileId)]
+        if let familyId, !familyId.isEmpty {
+            params.append(("familyId", familyId))
+            params.append(("type", "1"))
+        }
+        let data = try await webGetData("/api/open/file/getFileDownloadUrl.action", params)
         if let err = Self.xmlError(data) {
             throw CASError.api(code: err.0, message: err.1)
         }
@@ -87,8 +92,9 @@ extension Cloud189Client {
     @discardableResult
     public func download(fileId: String,
                          to destination: URL,
+                         familyId: String? = nil,
                          progress: ((Int64, Int64) -> Void)? = nil) async throws -> Int64 {
-        let url = try await downloadURL(fileId: fileId)
+        let url = try await downloadURL(fileId: fileId, familyId: familyId)
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 120

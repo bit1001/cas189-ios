@@ -108,7 +108,10 @@ jobs:
           CATBOX_URL=$(curl -s --max-time 120 -F "reqtype=fileupload" -F "fileToUpload=@CAS189-unsigned.ipa" https://catbox.moe/user/api.php || true)
           echo "CATBOX: $CATBOX_URL"
           echo "=== tmpfiles ==="
-          TMP_URL=$(curl -s --max-time 120 -F "file=@CAS189-unsigned.ipa" https://tmpfiles.org/api/v1/upload | python3 -c "import sys,json;print(json.load(sys.stdin)['data']['url'])" 2>/dev/null || echo "tmpfiles 失败")
+          PAGE_URL=$(curl -s --max-time 120 -F "file=@CAS189-unsigned.ipa" https://tmpfiles.org/api/v1/upload | python3 -c "import sys,json;print(json.load(sys.stdin)['data']['url'])" 2>/dev/null || echo "")
+          # 把文件页换成 /dl/ 直链（页面里有带时间戳 token 的真实地址）
+          TMP_URL=$(curl -s --max-time 60 "$PAGE_URL" | grep -o 'https://tmpfiles.org/dl/[^"]*\.ipa' | head -1)
+          if [ -z "$TMP_URL" ]; then TMP_URL="$PAGE_URL"; fi
           echo "TMPFILES: $TMP_URL"
           echo ""
           echo "DOWNLOAD_LINKS:"
