@@ -40,6 +40,12 @@ final class DocumentPickerCoordinator: NSObject, UIDocumentPickerDelegate {
 
         // 独立窗口呈现，避开复杂层级
         let window = UIWindow(frame: UIScreen.main.bounds)
+        // 必须挂上当前 scene，否则 iOS 13+ 的窗口不渲染（picker 根本不出现）
+        if let scene = (UIApplication.shared.connectedScenes.first {
+            $0.activationState == .foregroundActive
+        } as? UIWindowScene) ?? (UIApplication.shared.connectedScenes.first as? UIWindowScene) {
+            window.windowScene = scene
+        }
         let host = UIViewController()
         host.view.backgroundColor = .clear
         window.rootViewController = host
@@ -54,6 +60,7 @@ final class DocumentPickerCoordinator: NSObject, UIDocumentPickerDelegate {
             }
         }
 
+        logger?("专用窗口已挂载：scene=\(window.windowScene != nil ? "有" : "无")，isKeyWindow=\(window.isKeyWindow)")
         log("选择器已弹出（独立窗口，打开模式，可多选）")
         host.present(picker, animated: false)
     }
