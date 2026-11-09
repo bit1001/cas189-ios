@@ -6,6 +6,7 @@ import CAS189Core
 @main
 struct CAS189App: App {
     @StateObject private var store = Store()
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -14,6 +15,15 @@ struct CAS189App: App {
         .backgroundTask(.appRefresh(BackgroundRefresh.taskID)) {
             await store.backgroundRefresh()
         }
+    }
+}
+
+/// 后台下载会话的 App 重启回调：系统把 App 拉回来处理后台下载事件时调用
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping () -> Void) {
+        DownloadManager.shared.backgroundCompletionHandler = completionHandler
     }
 }
 
@@ -31,7 +41,8 @@ struct ContentView: View {
             loginTab.tabItem { Label("登录", systemImage: "person.crop.circle") }.tag(0)
             BrowserView().tabItem { Label("文件", systemImage: "folder") }.tag(1)
             TransferView().tabItem { Label("导入", systemImage: "arrow.down.doc") }.tag(2)
-            logTab.tabItem { Label("日志", systemImage: "doc.text") }.tag(3)
+            DownloadView().tabItem { Label("下载", systemImage: "arrow.down.circle") }.tag(3)
+            logTab.tabItem { Label("日志", systemImage: "doc.text") }.tag(4)
         }
         .overlay(alignment: .top) {
             if store.uploadProgress > 0 || !store.uploadLabel.isEmpty {
