@@ -37,8 +37,27 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        # 189 的下载地址可能走明文 HTTP（家庭云返回的直链），默认 ATS 会拦截
         NSAppTransportSecurity:
-          NSAllowsArbitraryLoads: false
+          NSExceptionDomains:
+            cloud.189.cn:
+              NSIncludesSubdomains: true
+              NSAllowsInsecureHTTPLoads: true
+            api.cloud.189.cn:
+              NSIncludesSubdomains: true
+              NSAllowsInsecureHTTPLoads: true
+            upload.cloud.189.cn:
+              NSIncludesSubdomains: true
+              NSAllowsInsecureHTTPLoads: true
+            preview.cloud.189.cn:
+              NSIncludesSubdomains: true
+              NSAllowsInsecureHTTPLoads: true
+            open.e.189.cn:
+              NSIncludesSubdomains: true
+              NSAllowsInsecureHTTPLoads: true
+            web.189.cn:
+              NSIncludesSubdomains: true
+              NSAllowsInsecureHTTPLoads: true
         BGTaskSchedulerPermittedIdentifiers:
           - com.local.cas189.refresh
         UIBackgroundModes:
