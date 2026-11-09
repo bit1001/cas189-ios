@@ -284,7 +284,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
         let id = downloadTask.taskIdentifier
         let http = downloadTask.response as? HTTPURLResponse
 
-        guard let self, let item = self.item(forTaskIdentifier: id) else { return }
+        guard let item = item(forTaskIdentifier: id) else { return }
 
         if let http, http.statusCode == 200 || http.statusCode == 206 {
             // 文件名冲突自动改名
@@ -360,7 +360,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
         guard let error else { return }
         let id = task.taskIdentifier
         DispatchQueue.main.async { [weak self] in
-            guard let self, let item = self.item(forTaskIdentifier: id) else { return }
+            guard let item = item(forTaskIdentifier: id) else { return }
             self.tasks[item.id] = nil
             guard item.status != .completed else { return }
             if (error as NSError).code == NSURLErrorCancelled {
