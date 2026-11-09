@@ -38,14 +38,13 @@ final class DocumentPickerCoordinator: NSObject, UIDocumentPickerDelegate {
         picker.shouldShowFileExtensions = true
         picker.delegate = coordinator
 
-        // 独立窗口呈现，避开复杂层级
-        let window = UIWindow(frame: UIScreen.main.bounds)
-        // 必须挂上当前 scene，否则 iOS 13+ 的窗口不渲染（picker 根本不出现）
-        if let scene = (UIApplication.shared.connectedScenes.first {
+        // 独立窗口呈现，避开复杂层级。
+        // 构造时必须带上当前 scene，否则 iOS 13+ 下窗口不挂在任何 scene 上，
+        // 不渲染，picker 根本不出现。
+        let scene = (UIApplication.shared.connectedScenes.first {
             $0.activationState == .foregroundActive
-        } as? UIWindowScene) ?? (UIApplication.shared.connectedScenes.first as? UIWindowScene) {
-            window.windowScene = scene
-        }
+        } ?? UIApplication.shared.connectedScenes.first) as? UIWindowScene
+        let window = UIWindow(windowScene: scene)
         let host = UIViewController()
         host.view.backgroundColor = .clear
         window.rootViewController = host
