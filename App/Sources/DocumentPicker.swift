@@ -54,7 +54,6 @@ final class DocumentPickerCoordinator: NSObject, UIDocumentPickerDelegate {
             }
         }
 
-        logger?("专用窗口已挂载：scene 有无=\(window.windowScene == nil ? 0 : 1)，isKeyWindow=\(window.isKeyWindow)")
         log("选择器已弹出（独立窗口，打开模式，可多选）")
         host.present(picker, animated: false)
     }
