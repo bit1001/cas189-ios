@@ -48,11 +48,6 @@ final class Store: ObservableObject {
 
     init(client: Cloud189Client = Cloud189Client()) {
         self.client = client
-        // 下载完成的日志写到日志页
-        DownloadManager.shared.logHandler = { [weak self] message in
-            Task { @MainActor in self?.append(message) }
-        }
-        DownloadManager.shared.attach(client: client)
         Task {
             await client.setDebugLog { [weak self] message in
                 Task { @MainActor in self?.append(message) }
@@ -394,12 +389,20 @@ final class Store: ObservableObject {
 
     func download(_ entry: CloudEntry) async {
         guard !entry.isFolder else { return }
-        errorText = nil
-        DownloadManager.shared.attach(client: client)
-        await DownloadManager.shared.enqueue(
-            client: client, fileId: entry.id, familyId: nil,
-            fileName: entry.name, totalBytes: entry.size)
-        append("已加入下载队列：\(entry.name)")
+        busy = true; errorText = nil
+        downloadLabel = "下载 \(entry.name)"
+        defer { busy = false; downloadLabel = "" }
+        do {
+            let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let dst = dir.appendingPathComponent(entry.name)
+            let n = try await client.download(fileId: entry.id, to: dst)
+            downloadedFile = dst
+            append("已下载 \(entry.name)（\(ByteCountFormatter.string(fromByteCount: n, countStyle: .file))）")
+        } catch {
+            errorText = error.localizedDescription
+            append("下载失败：\(error.localizedDescription)")
+            if isSessionExpired(error) { needsRelogin = true }
+        }
     }
 
     /// 后台刷新：重拉当前目录，让下次打开 App 时列表是新的

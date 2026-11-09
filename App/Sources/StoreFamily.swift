@@ -126,12 +126,19 @@ extension Store {
 
     func downloadFamily(_ entry: CloudEntry) async {
         guard !entry.isFolder else { return }
-        errorText = nil
-        DownloadManager.shared.attach(client: client)
-        await DownloadManager.shared.enqueue(
-            client: client, fileId: entry.id, familyId: familyId,
-            fileName: entry.name, totalBytes: entry.size)
-        append("已加入下载队列：\(entry.name)")
+        busy = true; errorText = nil
+        downloadLabel = "下载 \(entry.name)"
+        defer { busy = false; downloadLabel = "" }
+        do {
+            let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let dst = dir.appendingPathComponent(entry.name)
+            let n = try await client.download(fileId: entry.id, to: dst, familyId: familyId)
+            downloadedFile = dst
+            append("已下载 \(entry.name)（\(ByteCountFormatter.string(fromByteCount: n, countStyle: .file))）")
+        } catch {
+            errorText = error.localizedDescription
+            append("下载失败：\(error.localizedDescription)")
+        }
     }
 
     // MARK: 分享转存
