@@ -63,14 +63,27 @@ final class StreamingDownloader: NSObject, URLSessionDownloadDelegate, @unchecke
 extension Cloud189Client {
 
     /// 取下载直链。web 通道返回的 XML 里 URL 被 HTML 转义过（`&amp;`），必须反转义。
-    /// 家庭云文件必须带 familyId 且 type=1，否则直接报 PermissionDenied。
+    /// 家庭云走另一条通道：api.cloud.189.cn 上的签名接口
+    /// `/open/family/file/getFileDownloadUrl.action`，参数 fileId + familyId + type=1，
+    /// 用 web 通道带 familyId 只会得到 PermissionDenied。
     public func downloadURL(fileId: String, familyId: String? = nil) async throws -> URL {
-        var params: [(String, String)] = [("fileId", fileId)]
         if let familyId, !familyId.isEmpty {
-            params.append(("familyId", familyId))
-            params.append(("type", "1"))
+            let json = try await familyGet("/open/family/file/getFileDownloadUrl.action", params: [
+                ("fileId", fileId), ("familyId", familyId), ("type", "1")
+            ])
+            guard let raw = json["fileDownloadUrl"] as? String, !raw.isEmpty else {
+                throw CASError.missing("未返回下载地址（家庭云）")
+            }
+            let unescaped = raw
+                .replacingOccurrences(of: "&amp;", with: "&")
+                .replacingOccurrences(of: "&#38;", with: "&")
+            guard let url = URL(string: unescaped) else {
+                throw CASError.missing("下载地址不合法：\(unescaped.prefix(80))")
+            }
+            return url
         }
-        let data = try await webGetData("/api/open/file/getFileDownloadUrl.action", params)
+        let data = try await webGetData("/api/open/file/getFileDownloadUrl.action",
+                                        [("fileId", fileId)])
         if let err = Self.xmlError(data) {
             throw CASError.api(code: err.0, message: err.1)
         }
