@@ -59,8 +59,6 @@ final class DownloadManager: NSObject, ObservableObject {
     private override init() {
         super.init()
         let config = URLSessionConfiguration.background(withIdentifier: "com.local.cas189.downloads")
-        // 注意：不要给 background 配置赋值 discretionary，最新 Xcode 会编不过；
-        // 后台会话默认就是非 discretionary
         config.waitsForConnectivity = true
         config.timeoutIntervalForResource = 0       // 后台下载不限时长
         session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
@@ -283,96 +281,10 @@ final class DownloadManager: NSObject, ObservableObject {
 // MARK: - URLSessionDownloadDelegate
 
 extension DownloadManager: URLSessionDownloadDelegate {
-
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
-                    totalBytesExpectedToWrite: Int64) {
-        let id = downloadTask.taskIdentifier
-        let now = Date()
-        // 节流：同一任务 0.3s 内最多刷一次 UI
-        if let last = lastProgressUpdate[id], now.timeIntervalSince(last) < 0.3 { return }
-        lastProgressUpdate[id] = now
-        DispatchQueue.main.async { [weak self] in
-            guard let item = self?.item(forTaskIdentifier: id) else { return }
-            self?.update(id: item.id) {
-                $0.downloadedBytes = totalBytesWritten
-                if totalBytesExpectedToWrite > 0 { $0.totalBytes = totalBytesExpectedToWrite }
-            }
-        }
-    }
-
+                    totalBytesExpectedToWrite: Int64) {}
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
-                    didFinishDownloadingTo location: URL) {
-        let id = downloadTask.taskIdentifier
-        DispatchQueue.main.async { [weak self] in
-            guard let self, var item = self.item(forTaskIdentifier: id) else { return }
-            let http = downloadTask.response as? HTTPURLResponse
-
-            guard let http, http.statusCode == 200 || http.statusCode == 206 else {
-                self.update(id: item.id) {
-                    $0.status = .failed
-                    $0.errorMessage = "HTTP\(http?.statusCode ?? -1)"
-                }
-                self.logHandler?("下载失败：\(item.fileName)（HTTP\(http?.statusCode ?? -1)）")
-                try? FileManager.default.removeItem(at: location)
-                self.finishBackgroundIfDone()
-                return
-            }
-
-            // 落盘（同名文件加序号，不覆盖）
-            var dest = item.destinationURL.appendingPathComponent(item.fileName)
-            if FileManager.default.fileExists(atPath: dest.path) {
-                let base = (item.fileName as NSString).deletingPathExtension
-                let ext = (item.fileName as NSString).pathExtension
-                var n = 1
-                repeat {
-                    let name = ext.isEmpty ? "\(base) (\(n))" : "\(base) (\(n)).\(ext)"
-                    dest = item.destinationURL.appendingPathComponent(name)
-                    n += 1
-                } while FileManager.default.fileExists(atPath: dest.path)
-            }
-            do {
-                try FileManager.default.createDirectory(at: item.destinationURL, withIntermediateDirectories: true)
-                try FileManager.default.moveItem(at: location, to: dest)
-                let attrs = try? FileManager.default.attributesOfItem(atPath: dest.path)
-                let size = (attrs?[.size] as? NSNumber)?.int64Value ?? item.downloadedBytes
-                self.update(id: item.id) {
-                    $0.status = .completed
-                    $0.downloadedBytes = size
-                    if size > 0 { $0.totalBytes = size }
-                    $0.errorMessage = nil
-                }
-                self.logHandler?("已下载 \(item.fileName)（\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))）→ \(dest.lastPathComponent)")
-                _ = item
-            } catch {
-                self.update(id: item.id) {
-                    $0.status = .failed
-                    $0.errorMessage = "落盘失败：\(error.localizedDescription)"
-                }
-                self.logHandler?("落盘失败：\(item.fileName)（\(error.localizedDescription)）")
-            }
-            self.finishBackgroundIfDone()
-        }
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let error else { return }
-        let id = task.taskIdentifier
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let item = self.item(forTaskIdentifier: id) else { return }
-            // 已完成的不再覆盖（didFinishDownloadingTo 先到）
-            guard item.status != .completed else { return }
-            // 用户主动取消的不算失败
-            if (error as NSError).code == NSURLErrorCancelled {
-                self.update(id: item.id) { $0.status = .paused; $0.errorMessage = "已取消" }
-                return
-            }
-            self.update(id: item.id) {
-                $0.status = .failed
-                $0.errorMessage = error.localizedDescription
-            }
-            self.logHandler?("下载失败：\(item.fileName)（\(error.localizedDescription)）")
-            self.finishBackgroundIfDone()
-        }
-    }
+                    didFinishDownloadingTo location: URL) {}
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {}
 }
