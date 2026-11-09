@@ -360,7 +360,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
         guard let error else { return }
         let id = task.taskIdentifier
         DispatchQueue.main.async { [weak self] in
-            guard let item = item(forTaskIdentifier: id) else { return }
+            guard let self, let item = self.item(forTaskIdentifier: id) else { return }
             self.tasks[item.id] = nil
             guard item.status != .completed else { return }
             if (error as NSError).code == NSURLErrorCancelled {
