@@ -44,7 +44,12 @@ final class DocumentPickerCoordinator: NSObject, UIDocumentPickerDelegate {
         let scene = (UIApplication.shared.connectedScenes.first {
             $0.activationState == .foregroundActive
         } ?? UIApplication.shared.connectedScenes.first) as? UIWindowScene
-        let window = UIWindow(windowScene: scene)
+        let window: UIWindow
+        if let scene {
+            window = UIWindow(windowScene: scene)
+        } else {
+            window = UIWindow(frame: UIScreen.main.bounds)
+        }
         let host = UIViewController()
         host.view.backgroundColor = .clear
         window.rootViewController = host
