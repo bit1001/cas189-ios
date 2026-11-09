@@ -111,3 +111,19 @@ jobs:
           echo "DOWNLOAD_LINKS:"
           echo "$CATBOX_URL"
           echo "$TMP_URL"
+          {
+            echo "commit: ${{ github.sha }}"
+            echo "catbox: $CATBOX_URL"
+            echo "tmpfiles: $TMP_URL"
+          } > ci-links.txt
+
+      # 5) 把直链写进 ci-artifacts 分支（GitHub 产物 API 需要 token，git 是现成的通道）
+      - name: Publish download links to branch
+        run: |
+          set -e
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git checkout -b ci-artifacts
+          git add ci-links.txt
+          git commit -m "ci: 最新构建的下载直链"
+          git push -f origin ci-artifacts
