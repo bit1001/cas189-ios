@@ -62,6 +62,18 @@ final class StreamingDownloader: NSObject, URLSessionDownloadDelegate, @unchecke
 
 extension Cloud189Client {
 
+    /// 与官方 App 的 normalizeDownloadUrl 保持一致：去掉空白、反 HTML 转义、
+    /// `//host` 补 `https:`、`http://` 强制改写成 `https://`。
+    /// 189 下载直链常是明文 http，改写后既绕开 ATS 也走官方同款路径。
+    static func normalizeDownloadURL(_ raw: String) -> String {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&#38;", with: "&")
+        if s.hasPrefix("//") { s = "https:" + s }
+        if s.hasPrefix("http://") { s = "https://" + String(s.dropFirst(7)) }
+        return s
+    }
+
     /// 取下载直链。web 通道返回的 XML 里 URL 被 HTML 转义过（`&amp;`），必须反转义。
     /// 家庭云走另一条通道：api.cloud.189.cn 上的签名接口
     /// `/open/family/file/getFileDownloadUrl.action`，参数 fileId + familyId + type=1，
@@ -74,11 +86,9 @@ extension Cloud189Client {
             guard let raw = json["fileDownloadUrl"] as? String, !raw.isEmpty else {
                 throw CASError.missing("未返回下载地址（家庭云）")
             }
-            let unescaped = raw
-                .replacingOccurrences(of: "&amp;", with: "&")
-                .replacingOccurrences(of: "&#38;", with: "&")
-            guard let url = URL(string: unescaped) else {
-                throw CASError.missing("下载地址不合法：\(unescaped.prefix(80))")
+            let normalized = Self.normalizeDownloadURL(raw)
+            guard let url = URL(string: normalized) else {
+                throw CASError.missing("下载地址不合法：\(normalized.prefix(80))")
             }
             return url
         }
@@ -88,15 +98,13 @@ extension Cloud189Client {
             throw CASError.api(code: err.0, message: err.1)
         }
         guard let text = String(data: data, encoding: .utf8),
-              let raw = Self.xmlTag(text, "fileDownloadUrl"),
+              let raw = Self.xmlTag(text, "fileDownloadUrl") ?? Self.xmlTag(text, "fileUrl"),
               !raw.isEmpty else {
             throw CASError.missing("未返回下载地址")
         }
-        let unescaped = raw
-            .replacingOccurrences(of: "&amp;", with: "&")
-            .replacingOccurrences(of: "&#38;", with: "&")
-        guard let url = URL(string: unescaped) else {
-            throw CASError.missing("下载地址不合法：\(unescaped.prefix(80))")
+        let normalized = Self.normalizeDownloadURL(raw)
+        guard let url = URL(string: normalized) else {
+            throw CASError.missing("下载地址不合法：\(normalized.prefix(80))")
         }
         return url
     }
@@ -120,7 +128,15 @@ extension Cloud189Client {
         }
 
         let downloader = StreamingDownloader(progress: progress)
-        let (tmp, http) = try await downloader.run(request)
+        let tmp: URL
+        let http: HTTPURLResponse
+        do {
+            (tmp, http) = try await downloader.run(request)
+        } catch {
+            // 把直链的域名/协议带进错误，方便判断是 ATS、重定向还是网络问题
+            let where_ = "\(url.scheme ?? "?")://\(url.host ?? "?")"
+            throw CASError.api(code: "下载失败", message: "下载地址 \(where_)：\(error.localizedDescription)")
+        }
 
         guard http.statusCode == 200 || http.statusCode == 206 else {
             try? FileManager.default.removeItem(at: tmp)
