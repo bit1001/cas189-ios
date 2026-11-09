@@ -379,7 +379,13 @@ extension Store {
             uploadLabel = "[\(index + 1)/\(urls.count)] \(url.lastPathComponent)"
             do {
                 let r = try await transferOne(url: url, space: space, folderId: folderId)
-                if r.ok { ok += 1 }
+                if r.ok {
+                    ok += 1
+                    // 处理成功后清掉本地副本（系统选择器给的临时文件不在沙盒里，不会动）
+                    if LocalFiles.contains(url) {
+                        do { try LocalFiles.delete(url) } catch { /* 清理失败不影响结果 */ }
+                    }
+                }
                 append("\(url.lastPathComponent) → \(r.message)")
             } catch {
                 append("\(url.lastPathComponent) 失败：\(error.localizedDescription)")
@@ -474,6 +480,13 @@ extension Store {
             }
         }
         append("凭证秒传 \(ok)/\(items.count)")
+        if ok == items.count {
+            var removed = 0
+            for url in urls where LocalFiles.contains(url) {
+                if (try? LocalFiles.delete(url)) != nil { removed += 1 }
+            }
+            if removed > 0 { append("已清理 App 文件夹里的 \(removed) 个本地副本") }
+        }
         await refresh(space: space, target: folderId)
     }
 

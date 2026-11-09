@@ -71,6 +71,11 @@ enum LocalFiles {
         return saved
     }
 
+    /// 这个 URL 是不是在我们自己的 Documents 沙盒里（可安全删除）
+    static func contains(_ url: URL) -> Bool {
+        url.path.hasPrefix(documents.path + "/")
+    }
+
     /// 删除 App 文件夹里的文件（Documents 与 Inbox 同名副本一起删）
     static func delete(_ url: URL) throws {
         if FileManager.default.fileExists(atPath: url.path) {
