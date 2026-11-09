@@ -103,7 +103,9 @@ final class DownloadManager: NSObject, ObservableObject {
               let decoded = try? JSONDecoder().decode([DownloadItem].self, from: data) else { return }
         items = decoded
     }
-    private func reattach() {}
+    private func reattach() {
+        session.getAllDownloadTasks { _ in }
+    }
     private func finishBackgroundIfDone() {}
 }
 
