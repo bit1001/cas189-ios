@@ -278,23 +278,16 @@ extension DownloadManager: URLSessionDownloadDelegate {
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didFinishDownloadingTo location: URL) {
+        // 关键：临时文件只在 delegate 方法返回前有效，必须同步落盘，
+        // 异步跳到别的队列再 move，文件已被系统删掉（“couldn't be moved，
+        // either the former doesn't exist”）。
         let id = downloadTask.taskIdentifier
-        DispatchQueue.main.async { [weak self] in
-            guard let self, var item = self.item(forTaskIdentifier: id) else { return }
-            self.tasks[item.id] = nil
-            let http = downloadTask.response as? HTTPURLResponse
+        let http = downloadTask.response as? HTTPURLResponse
 
-            guard let http, http.statusCode == 200 || http.statusCode == 206 else {
-                self.update(id: item.id) {
-                    $0.status = .failed
-                    $0.errorMessage = "HTTP\(http?.statusCode ?? -1)"
-                }
-                self.logHandler?("下载失败：\(item.fileName)（HTTP\(http?.statusCode ?? -1)）")
-                try? FileManager.default.removeItem(at: location)
-                self.finishBackgroundIfDone()
-                return
-            }
+        guard let self, let item = self.item(forTaskIdentifier: id) else { return }
 
+        if let http, http.statusCode == 200 || http.statusCode == 206 {
+            // 文件名冲突自动改名
             var dest = item.destinationURL.appendingPathComponent(item.fileName)
             if FileManager.default.fileExists(atPath: dest.path) {
                 let base = (item.fileName as NSString).deletingPathExtension
@@ -306,27 +299,60 @@ extension DownloadManager: URLSessionDownloadDelegate {
                     n += 1
                 } while FileManager.default.fileExists(atPath: dest.path)
             }
+
+            var size: Int64 = item.downloadedBytes
+            var moveError: Error?
             do {
                 try FileManager.default.createDirectory(at: item.destinationURL, withIntermediateDirectories: true)
                 try FileManager.default.moveItem(at: location, to: dest)
                 let attrs = try? FileManager.default.attributesOfItem(atPath: dest.path)
-                let size = (attrs?[.size] as? NSNumber)?.int64Value ?? item.downloadedBytes
-                self.update(id: item.id) {
-                    $0.status = .completed
-                    $0.downloadedBytes = size
-                    if size > 0 { $0.totalBytes = size }
-                    $0.errorMessage = nil
-                }
-                self.logHandler?("已下载 \(item.fileName)（\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))）→ \(dest.lastPathComponent)")
-                _ = item
+                size = (attrs?[.size] as? NSNumber)?.int64Value ?? size
             } catch {
+                moveError = error
+                // 兜底：move 不行试 copy（跨卷时 move 会失败）
+                do {
+                    try FileManager.default.copyItem(at: location, to: dest)
+                    try? FileManager.default.removeItem(at: location)
+                    let attrs = try? FileManager.default.attributesOfItem(atPath: dest.path)
+                    size = (attrs?[.size] as? NSNumber)?.int64Value ?? size
+                    moveError = nil
+                } catch {
+                    moveError = error
+                }
+            }
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.tasks[item.id] = nil
+                if let moveError {
+                    self.update(id: item.id) {
+                        $0.status = .failed
+                        $0.errorMessage = "落盘失败：\(moveError.localizedDescription)"
+                    }
+                    self.logHandler?("落盘失败：\(item.fileName)（\(moveError.localizedDescription)）")
+                } else {
+                    self.update(id: item.id) {
+                        $0.status = .completed
+                        $0.downloadedBytes = size
+                        if size > 0 { $0.totalBytes = size }
+                        $0.errorMessage = nil
+                    }
+                    self.logHandler?("已下载 \(item.fileName)（\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))）→ \(dest.lastPathComponent)")
+                }
+                self.finishBackgroundIfDone()
+            }
+        } else {
+            try? FileManager.default.removeItem(at: location)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.tasks[item.id] = nil
                 self.update(id: item.id) {
                     $0.status = .failed
-                    $0.errorMessage = "落盘失败：\(error.localizedDescription)"
+                    $0.errorMessage = "HTTP\(http?.statusCode ?? -1)"
                 }
-                self.logHandler?("落盘失败：\(item.fileName)（\(error.localizedDescription)）")
+                self.logHandler?("下载失败：\(item.fileName)（HTTP\(http?.statusCode ?? -1)）")
+                self.finishBackgroundIfDone()
             }
-            self.finishBackgroundIfDone()
         }
     }
 
