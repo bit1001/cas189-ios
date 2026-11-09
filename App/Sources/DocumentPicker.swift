@@ -1,22 +1,28 @@
 import UIKit
 import UniformTypeIdentifiers
 
-/// 原生文档选择器封装。
+/// 打开系统文件选择器（打开模式）。
 ///
-/// 关键点：
-/// - **用 asCopy: true（导入模式）**。`asCopy: false` 需要文件提供者返回可书签化的
-///   security-scoped URL；在 LiveContainer 这类虚拟容器里这一步可能静默失败，
-///   表现为面板能弹出、点「打开」后 delegate 从不触发。导入模式由系统把文件复制到
-///   本 App 沙盒，不走那条链路。
-/// - picker 只弱引用 delegate，必须自己强引用 coordinator。
-/// - 子类监听 viewDidDisappear：面板关了却没收到任何 delegate 回调时写日志并回调空结果，
-///   避免界面永远卡住，也能区分「系统没回结果」和「我们不处理」。
+/// 关键点（踩过的坑）：
+/// - **用独立 UIWindow 呈现**。`UIDocumentPickerViewController` 在呈现 VC 处于复杂层级时
+///   会出现「弹出 → 点文件 → 关闭，但 delegate 永不触发」的静默失败（已知 UIKit 行为，
+///   直接安装也会复现，与 LiveContainer 等宿主环境无关）。SwiftUI 的托管根视图 +
+///   `presentedViewController` 链正是复杂层级。社区验证过的绕行：建一个专用的
+///   `UIWindow(windowLevel: .alert)`，用空白 UIViewController 呈现选择器。
+/// - **用 asCopy: false（打开模式）**：直接返回 security-scoped URL，不复制到 TMPDIR，
+///   不依赖宿主环境改过的临时目录；本 App 只读文件，不需要回写。
+/// - picker 的 delegate 是弱引用，必须强引用 coordinator；专用窗口同样强引用，
+///   在结果回调后拆掉并把 key 恢复给主窗口。
+/// - 用 KVO 监听 `picker.view.window` 判断「面板关了但没回调」（安全网，避免界面卡住），
+///   因此不再需要子类化选择器。
 final class DocumentPickerCoordinator: NSObject, UIDocumentPickerDelegate {
 
-    static var shared: DocumentPickerCoordinator?
+    static var current: DocumentPickerCoordinator?
 
     private var completion: (([URL]) -> Void)?
     private var logger: ((String) -> Void)?
+    private var window: UIWindow?
+    private var windowObservation: NSKeyValueObservation?
     private var finished = false
 
     static func pickFiles(allowsMultiple: Bool = true,
@@ -25,26 +31,31 @@ final class DocumentPickerCoordinator: NSObject, UIDocumentPickerDelegate {
         let coordinator = DocumentPickerCoordinator()
         coordinator.completion = completion
         coordinator.logger = log
-        coordinator.finished = false
-        shared = coordinator
+        current = coordinator
 
-        // asCopy: false —— 打开模式：直接返回 security-scoped URL，不复制到 TMPDIR
-        let picker = LoggingDocumentPicker(forOpeningContentTypes: [.item], asCopy: false)
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: false)
         picker.allowsMultipleSelection = allowsMultiple
         picker.shouldShowFileExtensions = true
         picker.delegate = coordinator
-        picker.onDisappear = { [weak coordinator] in
-            coordinator?.pickerVanished()
+
+        // 独立窗口呈现，避开复杂层级
+        let window = UIWindow(frame: UIScreen.main.bounds)
+        let host = UIViewController()
+        host.view.backgroundColor = .clear
+        window.rootViewController = host
+        window.windowLevel = .alert
+        coordinator.window = window
+        window.makeKeyAndVisible()
+
+        // 面板关闭但没有 delegate 回调时兜底
+        coordinator.windowObservation = picker.view.observe(\.window) { [weak coordinator] view, _ in
+            if view.window == nil {
+                coordinator?.pickerVanished()
+            }
         }
 
-        guard let host = topViewController() else {
-            log("找不到可用窗口，选择器无法弹出")
-            completion([])
-            shared = nil
-            return
-        }
-        log("选择器已弹出（打开模式，可多选）")
-        host.present(picker, animated: true)
+        log("选择器已弹出（独立窗口，打开模式，可多选）")
+        host.present(picker, animated: false)
     }
 
     // MARK: - Delegate
@@ -68,7 +79,7 @@ final class DocumentPickerCoordinator: NSObject, UIDocumentPickerDelegate {
     fileprivate func pickerVanished() {
         guard !finished else { return }
         finish([], reason: "vanished")
-        logger?("选择器已关闭，但系统没返回文件 —— 请确认已在 LiveContainer 里长按 App → 设置 → 开启 Fix File Picker，并完全退出重开 App")
+        logger?("选择器已关闭，但系统没返回文件（面板关闭但 delegate 未触发）")
     }
 
     private func finish(_ urls: [URL], reason: String) {
@@ -79,27 +90,20 @@ final class DocumentPickerCoordinator: NSObject, UIDocumentPickerDelegate {
         completion = nil
         DispatchQueue.main.async {
             callback?(urls)
-            DocumentPickerCoordinator.shared = nil
+            DocumentPickerCoordinator.current?.tearDown()
+            DocumentPickerCoordinator.current = nil
         }
     }
 
-    static func topViewController() -> UIViewController? {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        let window = scenes.flatMap(\.windows).first(where: { $0.isKeyWindow })
-            ?? scenes.first?.windows.first
-        var top = window?.rootViewController
-        while let presented = top?.presentedViewController {
-            top = presented
+    /// 拆掉专用窗口，把 key 恢复给主窗口
+    private func tearDown() {
+        windowObservation?.invalidate()
+        windowObservation = nil
+        if let ownWindow = window {
+            let scene = ownWindow.windowScene
+            let others = (scene?.windows ?? UIApplication.shared.windows).filter { $0 !== ownWindow }
+            (others.first(where: { $0.isKeyWindow }) ?? others.first)?.makeKey()
+            window = nil
         }
-        return top
-    }
-}
-
-private final class LoggingDocumentPicker: UIDocumentPickerViewController {
-    var onDisappear: (() -> Void)?
-
-    override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
-        onDisappear?()
     }
 }
