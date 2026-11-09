@@ -27,7 +27,7 @@ struct DownloadItem: Identifiable, Codable, Equatable {
     var destinationURL: URL { URL(fileURLWithPath: destinationPath) }
 }
 
-/// 下载管理器（骨架版 2，用于定位编译问题）
+/// 下载管理器（骨架版 3，用于定位编译问题）
 final class DownloadManager: NSObject, ObservableObject {
 
     static let shared = DownloadManager()
@@ -47,7 +47,7 @@ final class DownloadManager: NSObject, ObservableObject {
         config.discretionary = false
         config.waitsForConnectivity = true
         config.timeoutIntervalForResource = 0
-        session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+        session = URLSession(configuration: config, delegate: nil, delegateQueue: nil)
         restore()
         reattach()
     }
@@ -72,13 +72,4 @@ final class DownloadManager: NSObject, ObservableObject {
     func remove(id: UUID) {}
     func clearFinished() {}
     func retry(id: UUID) {}
-}
-
-extension DownloadManager: URLSessionDownloadDelegate {
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
-                    didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
-                    totalBytesExpectedToWrite: Int64) {}
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
-                    didFinishDownloadingTo location: URL) {}
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {}
 }
