@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import CAS189Core
 
 /// 下载任务状态
@@ -26,14 +27,58 @@ struct DownloadItem: Identifiable, Codable, Equatable {
     var destinationURL: URL { URL(fileURLWithPath: destinationPath) }
 }
 
-/// 下载管理器（骨架版，用于定位编译问题）
+/// 下载管理器（骨架版 2，用于定位编译问题）
 final class DownloadManager: NSObject, ObservableObject {
 
     static let shared = DownloadManager()
 
     @Published var items: [DownloadItem] = []
 
+    var backgroundCompletionHandler: (() -> Void)?
+    var logHandler: ((String) -> Void)?
+
+    private var session: URLSession!
+    private let storeKey = "cas189.downloadItems.v1"
+    private var lastProgressUpdate: [Int: Date] = [:]
+
     private override init() {
         super.init()
+        let config = URLSessionConfiguration.background(withIdentifier: "com.local.cas189.downloads")
+        config.discretionary = false
+        config.waitsForConnectivity = true
+        config.timeoutIntervalForResource = 0
+        session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+        restore()
+        reattach()
     }
+
+    static func targetDirectory() -> URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    }
+
+    static var destinationName: String { "App 文件夹" }
+
+    func attach(client: Cloud189Client) {}
+
+    private func restore() {}
+    private func reattach() {}
+    private func save() {}
+
+    func enqueue(client: Cloud189Client, fileId: String, familyId: String?,
+                 fileName: String, totalBytes: Int64, destination: URL? = nil) async {}
+    func pause(id: UUID) {}
+    func resume(id: UUID) {}
+    func cancel(id: UUID) {}
+    func remove(id: UUID) {}
+    func clearFinished() {}
+    func retry(id: UUID) {}
+}
+
+extension DownloadManager: URLSessionDownloadDelegate {
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
+                    didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
+                    totalBytesExpectedToWrite: Int64) {}
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
+                    didFinishDownloadingTo location: URL) {}
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {}
 }
