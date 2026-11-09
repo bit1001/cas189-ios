@@ -40,6 +40,10 @@ targets:
         # 189 的下载地址可能走明文 HTTP（家庭云返回的直链），默认 ATS 会拦截
         NSAppTransportSecurity:
           NSExceptionDomains:
+            # 父级放宽到整个 189.cn，任何 CDN/下载主机（download.*、gateway.* 等）都被覆盖
+            189.cn:
+              NSIncludesSubdomains: true
+              NSAllowsInsecureHTTPLoads: true
             cloud.189.cn:
               NSIncludesSubdomains: true
               NSAllowsInsecureHTTPLoads: true
