@@ -96,3 +96,18 @@ jobs:
         with:
           name: CAS189-unsigned-ipa
           path: CAS189-unsigned.ipa
+
+      # 4) 把未签名 IPA 上传到公共临时文件站，拿到直链（仓库私有，产物 API 需要 token）
+      - name: Upload to public host
+        run: |
+          set -e
+          echo "=== catbox ==="
+          CATBOX_URL=$(curl -s --max-time 120 -F "reqtype=fileupload" -F "fileToUpload=@CAS189-unsigned.ipa" https://catbox.moe/user/api.php || true)
+          echo "CATBOX: $CATBOX_URL"
+          echo "=== tmpfiles ==="
+          TMP_URL=$(curl -s --max-time 120 -F "file=@CAS189-unsigned.ipa" https://tmpfiles.org/api/v1/upload | python3 -c "import sys,json;print(json.load(sys.stdin)['data']['url'])" 2>/dev/null || echo "tmpfiles 失败")
+          echo "TMPFILES: $TMP_URL"
+          echo ""
+          echo "DOWNLOAD_LINKS:"
+          echo "$CATBOX_URL"
+          echo "$TMP_URL"
