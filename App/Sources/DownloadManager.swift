@@ -43,7 +43,8 @@ final class DownloadManager: NSObject, ObservableObject {
 
     private override init() {
         super.init()
-        session = URLSession.shared
+        let config = URLSessionConfiguration.default
+        session = URLSession(configuration: config, delegate: nil, delegateQueue: nil)
         restore()
         reattach()
     }
