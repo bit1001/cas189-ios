@@ -23,6 +23,8 @@ struct ContentView: View {
     @State private var cookieInput = ""
     @State private var showLogin = false
     @State private var tab = 0
+    @State private var incomingFiles: [URL] = []
+    @State private var showIncoming = false
 
     var body: some View {
         TabView(selection: $tab) {
@@ -49,7 +51,20 @@ struct ContentView: View {
             }
         }
         .onOpenURL { url in
-            Task { await store.importIncoming([url], space: .personal) }
+            // 先收进 App 文件夹，再让用户选处理方式 + 目标目录
+            let saved = LocalFiles.copyIn([url])
+            guard !saved.isEmpty else {
+                store.append("已接收 \(url.lastPathComponent)，但无法复制进 App")
+                return
+            }
+            store.append("已接收 \(url.lastPathComponent)（\(LocalFiles.sizeText(saved[0]))）")
+            incomingFiles = saved
+            showIncoming = true
+        }
+        .sheet(isPresented: $showIncoming) {
+            if !incomingFiles.isEmpty {
+                IncomingImportView(files: incomingFiles) { showIncoming = false }
+            }
         }
         .onChange(of: scenePhase) { phase in
             if phase == .background { BackgroundRefresh.schedule() }
