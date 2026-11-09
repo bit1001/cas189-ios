@@ -2,12 +2,10 @@ import Foundation
 import UIKit
 import CAS189Core
 
-/// 下载任务状态
 enum DownloadStatus: String, Codable {
     case queued, downloading, paused, completed, failed, interrupted
 }
 
-/// 一个下载任务
 struct DownloadItem: Identifiable, Codable, Equatable {
     var id: UUID
     var fileId: String
@@ -27,7 +25,7 @@ struct DownloadItem: Identifiable, Codable, Equatable {
     var destinationURL: URL { URL(fileURLWithPath: destinationPath) }
 }
 
-/// 下载管理器（半 A bisect：只保留持久化与辅助方法）
+/// 下载管理器（半 A2 bisect：桩化 JSON/getAllDownloadTasks）
 final class DownloadManager: NSObject, ObservableObject {
 
     static let shared = DownloadManager()
@@ -94,44 +92,10 @@ final class DownloadManager: NSObject, ObservableObject {
         items.first(where: { $0.taskIdentifier == identifier })
     }
 
-    private func save() {
-        if let data = try? JSONEncoder().encode(items) {
-            UserDefaults.standard.set(data, forKey: storeKey)
-        }
-    }
-
-    private func restore() {
-        guard let data = UserDefaults.standard.data(forKey: storeKey),
-              let decoded = try? JSONDecoder().decode([DownloadItem].self, from: data) else { return }
-        items = decoded
-    }
-
-    private func reattach() {
-        session.getAllDownloadTasks { [weak self] tasks in
-            let alive = Set(tasks.map(\.taskIdentifier))
-            DispatchQueue.main.async {
-                guard let self else { return }
-                var changed = false
-                for i in self.items.indices where self.items[i].status == .downloading
-                    && !alive.contains(self.items[i].taskIdentifier) {
-                    self.items[i].status = .interrupted
-                    self.items[i].errorMessage = "App 重启后中断，可重试"
-                    changed = true
-                }
-                if changed { self.save() }
-            }
-        }
-    }
-
-    private func finishBackgroundIfDone() {
-        session.getAllDownloadTasks { [weak self] tasks in
-            guard tasks.isEmpty else { return }
-            DispatchQueue.main.async {
-                self?.backgroundCompletionHandler?()
-                self?.backgroundCompletionHandler = nil
-            }
-        }
-    }
+    private func save() {}
+    private func restore() {}
+    private func reattach() {}
+    private func finishBackgroundIfDone() {}
 }
 
 extension DownloadManager: URLSessionDownloadDelegate {
