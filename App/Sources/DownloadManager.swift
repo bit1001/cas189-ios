@@ -92,8 +92,17 @@ final class DownloadManager: NSObject, ObservableObject {
         items.first(where: { $0.taskIdentifier == identifier })
     }
 
-    private func save() {}
-    private func restore() {}
+    private func save() {
+        if let data = try? JSONEncoder().encode(items) {
+            UserDefaults.standard.set(data, forKey: storeKey)
+        }
+    }
+
+    private func restore() {
+        guard let data = UserDefaults.standard.data(forKey: storeKey),
+              let decoded = try? JSONDecoder().decode([DownloadItem].self, from: data) else { return }
+        items = decoded
+    }
     private func reattach() {}
     private func finishBackgroundIfDone() {}
 }
