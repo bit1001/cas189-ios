@@ -66,7 +66,7 @@ final class DocumentPickerCoordinator: NSObject, UIDocumentPickerDelegate {
 
         let hasScene = window.windowScene != nil
         let isKey = window.isKeyWindow
-        logger?("专用窗口已挂载：有scene=\(hasScene)，isKeyWindow=\(isKey)")
+        log("专用窗口已挂载：有scene=\(hasScene)，isKeyWindow=\(isKey)")
         log("选择器已弹出（独立窗口，打开模式，可多选）")
         host.present(picker, animated: false)
     }
