@@ -51,6 +51,18 @@ public actor Cloud189Client {
         return session
     }
 
+    /// 使用已有 Cookie（需包含 COOKIE_LOGIN_USER）重新激活 Session，获取最新 sessionKey 和容器 Session
+    @discardableResult
+    public func refreshSession() async throws -> Session {
+        guard transport.cookie(named: "COOKIE_LOGIN_USER")?.isEmpty == false else {
+            throw CASError.missing("Cookie 中缺少 COOKIE_LOGIN_USER，无法刷新会话")
+        }
+        // 清理旧的、可能已过期的 JSESSIONID，让服务端重新签发有效容器 Session
+        transport.clearSessionCookies()
+        try await fetchSessionKey()
+        return snapshot()
+    }
+
     /// getUserBriefInfo：拿 sessionKey / 昵称
     private func fetchSessionKey() async throws {
         var comps = URLComponents(string: C.webURL + "/v2/getUserBriefInfo.action")!
@@ -66,8 +78,16 @@ public actor Cloud189Client {
         }
         let name = (json["userAccount"] as? String) ?? (json["nickname"] as? String) ?? ""
         let deviceId = (json["deviceId"] as? String) ?? ""
-        session = Session(sessionKey: key, loginName: name, deviceId: deviceId, cookies: transport.cookies)
-        log("登录成功(Web) name=\(name)")
+        session = Session(
+            sessionKey: key,
+            sessionSecret: session.sessionSecret,
+            rsaPubKey: session.rsaPubKey,
+            rsaPkId: session.rsaPkId,
+            loginName: name.isEmpty ? session.loginName : name,
+            deviceId: deviceId.isEmpty ? session.deviceId : deviceId,
+            cookies: transport.cookies
+        )
+        log("会话更新成功(Web) name=\(session.loginName)")
     }
 
     // MARK: - 登录：账号密码（RSA）
@@ -187,13 +207,25 @@ public actor Cloud189Client {
 
     // MARK: - 业务请求：web（Cookie）
 
-    public func webGet(_ path: String, _ query: [(String, String)]) async throws -> [String: Any] {
+    public func webGet(_ path: String, _ query: [(String, String)], retryOnAuthFail: Bool = true) async throws -> [String: Any] {
         var comps = URLComponents(string: C.webURL + path)!
         comps.queryItems = query.map { URLQueryItem(name: $0.0, value: $0.1) }
         let res = try await transport.request(comps.url!, headers: [
             "Accept": "application/json;charset=UTF-8",
             "Referer": C.referer
         ])
+        if (res.status == 302 || res.status == 401 || (300...399).contains(res.status)) && retryOnAuthFail {
+            log("GET \(path) 命中重定向/鉴权失败(HTTP \(res.status))，尝试静默刷新会话...")
+            do {
+                _ = try await refreshSession()
+                return try await webGet(path, query, retryOnAuthFail: false)
+            } catch {
+                throw CASError.sessionExpired("登录会话已失效，且自动刷新失败：\(error.localizedDescription)")
+            }
+        }
+        if res.status >= 400 {
+            throw CASError.http(res.status, res.text)
+        }
         let json = try res.json()
         if let code = json["res_code"] as? Int, code != 0 {
             throw CASError.api(code: String(code), message: (json["res_message"] as? String) ?? "")
@@ -202,7 +234,7 @@ public actor Cloud189Client {
     }
 
     /// 同上，但返回原始字节：PC 网页接口是 XML 而不是 JSON
-    public func webGetData(_ path: String, _ query: [(String, String)]) async throws -> Data {
+    public func webGetData(_ path: String, _ query: [(String, String)], retryOnAuthFail: Bool = true) async throws -> Data {
         var comps = URLComponents(string: C.webURL + path)!
         comps.queryItems = query.map { URLQueryItem(name: $0.0, value: $0.1) }
         let res = try await transport.request(comps.url!, headers: [
@@ -210,6 +242,20 @@ public actor Cloud189Client {
             "Referer": C.referer
         ])
         log("GET \(path) -> HTTP \(res.status) \(res.body.count)B")
+
+        if (res.status == 302 || res.status == 401 || (300...399).contains(res.status)) && retryOnAuthFail {
+            log("GET \(path) 命中重定向/鉴权失败(HTTP \(res.status))，尝试静默刷新会话...")
+            do {
+                _ = try await refreshSession()
+                return try await webGetData(path, query, retryOnAuthFail: false)
+            } catch {
+                throw CASError.sessionExpired("登录会话已失效，且自动刷新失败：\(error.localizedDescription)")
+            }
+        }
+
+        if res.status >= 400 {
+            throw CASError.http(res.status, res.text)
+        }
         return res.body
     }
 
@@ -226,6 +272,9 @@ public actor Cloud189Client {
             ("mediaType", "0"),
             ("iconOption", "5")
         ])
+        if let err = Self.xmlError(data) {
+            throw CASError.api(code: err.0, message: err.1)
+        }
         // PC 网页接口固定返回 XML
         return try WebListParser.parse(data)
     }

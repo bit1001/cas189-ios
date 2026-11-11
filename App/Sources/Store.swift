@@ -58,12 +58,23 @@ final class Store: ObservableObject {
                 Task { @MainActor in self?.append(message) }
             }
         }
-        // 冷启动：从 Keychain 恢复会话，直接尝试拉目录
+        // 冷启动：从 Keychain 恢复会话，先静默激活会话，再拉目录
         if let saved = SessionStore.load() {
             session = saved
             append("已恢复上次会话：\(saved.loginName)")
             Task {
                 await client.restore(session: saved)
+                do {
+                    let fresh = try await client.refreshSession()
+                    session = fresh
+                    SessionStore.save(fresh)
+                    append("会话已激活：\(fresh.loginName)")
+                } catch {
+                    append("会话激活提示：\(error.localizedDescription)")
+                    if isSessionExpired(error) {
+                        needsRelogin = true
+                    }
+                }
                 await load("-11")
             }
         }
@@ -132,6 +143,9 @@ final class Store: ObservableObject {
         } catch {
             errorText = error.localizedDescription
             append("列目录失败：\(error.localizedDescription)")
+            if isSessionExpired(error) {
+                needsRelogin = true
+            }
         }
     }
 
@@ -378,7 +392,7 @@ final class Store: ObservableObject {
     func isSessionExpired(_ error: Error) -> Bool {
         if case CASError.sessionExpired = error { return true }
         let text = error.localizedDescription
-        return text.contains("登录") || text.contains("session") || text.contains("SessionKey")
+        return text.contains("登录") || text.contains("session") || text.contains("SessionKey") || text.contains("失效")
     }
 
     func relogin() {

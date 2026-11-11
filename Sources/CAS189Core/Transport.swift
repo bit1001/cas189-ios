@@ -45,8 +45,32 @@ public final class Transport: NSObject, URLSessionTaskDelegate, @unchecked Senda
         return cookies[name]
     }
 
+    public func removeCookie(named name: String) {
+        lock.lock(); defer { lock.unlock() }
+        cookies.removeValue(forKey: name)
+    }
+
+    public func clearSessionCookies() {
+        lock.lock(); defer { lock.unlock() }
+        cookies.removeValue(forKey: "JSESSIONID")
+    }
+
     private func absorb(_ response: HTTPURLResponse) {
         let fields = response.allHeaderFields
+        var headerMap: [String: String] = [:]
+        for (k, v) in fields {
+            headerMap[String(describing: k)] = String(describing: v)
+        }
+        let url = response.url ?? URL(string: "https://cloud.189.cn")!
+        let parsed = HTTPCookie.cookies(withResponseHeaderFields: headerMap, for: url)
+        if !parsed.isEmpty {
+            lock.lock(); defer { lock.unlock() }
+            for c in parsed {
+                cookies[c.name] = c.value
+            }
+            return
+        }
+
         var raw: [String] = []
         for (k, v) in fields where String(describing: k).lowercased() == "set-cookie" {
             raw.append(String(describing: v))
