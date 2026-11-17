@@ -1,22 +1,30 @@
 import Foundation
 
-/// AES-128 decryption (ECB block + CBC mode), pure Swift so the same code runs
-/// on Linux CI, iOS and macOS without CommonCrypto/OpenSSL bridging.
-/// Only decryption is implemented — the client never encrypts.
-public struct AES128 {
-    private var roundKeys: [UInt8] // 11 round keys × 16 bytes
+/// AES decryption (128/192/256, ECB block + CBC mode), pure Swift so the same code
+/// runs on Linux CI, iOS and macOS without CommonCrypto/OpenSSL bridging.
+/// Only decryption is implemented — clients never encrypt.
+public struct AES {
+    public let keySize: Int
+    private let rounds: Int
+    private let roundKeys: [UInt8]
 
     public init(key: [UInt8]) throws {
-        guard key.count == 16 else { throw QHError.crypto("AES-128 needs a 16-byte key") }
-        roundKeys = AES128.expandKey(key)
+        switch key.count {
+        case 16, 24, 32: break
+        default: throw QHError.crypto("AES key must be 16/24/32 bytes, got \(key.count)")
+        }
+        keySize = key.count
+        rounds = key.count / 4 + 6
+        roundKeys = AES.expandKey(key)
     }
+
+    public var blockSize: Int { 16 }
 
     public func decryptBlock(_ input: [UInt8]) throws -> [UInt8] {
         guard input.count == 16 else { throw QHError.crypto("block must be 16 bytes") }
         var s = input
-        // AddRoundKey(10)
-        for i in 0..<16 { s[i] ^= roundKeys[160 + i] }
-        var round = 9
+        for i in 0..<16 { s[i] ^= roundKeys[rounds * 16 + i] }
+        var round = rounds - 1
         while round >= 1 {
             invShiftRows(&s)
             invSubBytes(&s)
@@ -30,8 +38,8 @@ public struct AES128 {
         return s
     }
 
-    /// CBC decryption without padding removal (caller decides).
-    public func decryptCBC(_ data: [UInt8], iv: [UInt8]) throws -> [UInt8] {
+    /// CBC decryption. When `removePadding` is true, validates and strips PKCS#7.
+    public func decryptCBC(_ data: [UInt8], iv: [UInt8], removePadding: Bool = false) throws -> [UInt8] {
         guard iv.count == 16 else { throw QHError.crypto("IV must be 16 bytes") }
         let usable = data.count - (data.count % 16)
         guard usable > 0 else { return [] }
@@ -45,7 +53,12 @@ public struct AES128 {
             prev = block
             offset += 16
         }
-        return out
+        guard removePadding, let pad = out.last else { return out }
+        let n = Int(pad)
+        guard n >= 1, n <= 16, n <= out.count, out.suffix(n).allSatisfy({ $0 == pad }) else {
+            throw QHError.crypto("bad PKCS#7 padding")
+        }
+        return Array(out.dropLast(n))
     }
 
     // MARK: - key schedule (encryption direction, used in reverse)
@@ -78,20 +91,24 @@ public struct AES128 {
     private static let rcon: [UInt8] = [0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1b,0x36]
 
     private static func expandKey(_ key: [UInt8]) -> [UInt8] {
-        var w = [UInt8](repeating: 0, count: 176)
-        for i in 0..<16 { w[i] = key[i] }
-        var i = 16
+        let nk = key.count / 4
+        let total = 16 * (nk + 7)
+        var w = [UInt8](repeating: 0, count: total)
+        for i in 0..<key.count { w[i] = key[i] }
+        var i = key.count
         var rconIndex = 0
-        while i < 176 {
+        while i < total {
             var temp = Array(w[(i - 4)..<i])
-            if i % 16 == 0 {
+            if i % key.count == 0 {
                 temp = [temp[1], temp[2], temp[3], temp[0]]
                 for j in 0..<4 { temp[j] = sbox[Int(temp[j])] }
                 temp[0] ^= rcon[rconIndex]
                 rconIndex += 1
+            } else if nk > 6 && i % key.count == 16 {
+                for j in 0..<4 { temp[j] = sbox[Int(temp[j])] }
             }
             for j in 0..<4 {
-                w[i + j] = w[i + j - 16] ^ temp[j]
+                w[i + j] = w[i + j - key.count] ^ temp[j]
             }
             i += 4
         }
@@ -99,7 +116,7 @@ public struct AES128 {
     }
 
     private func invSubBytes(_ s: inout [UInt8]) {
-        for i in 0..<16 { s[i] = AES128.invSbox[Int(s[i])] }
+        for i in 0..<16 { s[i] = AES.invSbox[Int(s[i])] }
     }
 
     private func invShiftRows(_ s: inout [UInt8]) {
@@ -117,10 +134,10 @@ public struct AES128 {
         for c in 0..<4 {
             let i = c * 4
             let a0 = s[i], a1 = s[i + 1], a2 = s[i + 2], a3 = s[i + 3]
-            s[i]     = AES128.mul(a0, 14) ^ AES128.mul(a1, 11) ^ AES128.mul(a2, 13) ^ AES128.mul(a3, 9)
-            s[i + 1] = AES128.mul(a0, 9)  ^ AES128.mul(a1, 14) ^ AES128.mul(a2, 11) ^ AES128.mul(a3, 13)
-            s[i + 2] = AES128.mul(a0, 13) ^ AES128.mul(a1, 9)  ^ AES128.mul(a2, 14) ^ AES128.mul(a3, 11)
-            s[i + 3] = AES128.mul(a0, 11) ^ AES128.mul(a1, 13) ^ AES128.mul(a2, 9)  ^ AES128.mul(a3, 14)
+            s[i]     = AES.mul(a0, 14) ^ AES.mul(a1, 11) ^ AES.mul(a2, 13) ^ AES.mul(a3, 9)
+            s[i + 1] = AES.mul(a0, 9)  ^ AES.mul(a1, 14) ^ AES.mul(a2, 11) ^ AES.mul(a3, 13)
+            s[i + 2] = AES.mul(a0, 13) ^ AES.mul(a1, 9)  ^ AES.mul(a2, 14) ^ AES.mul(a3, 11)
+            s[i + 3] = AES.mul(a0, 11) ^ AES.mul(a1, 13) ^ AES.mul(a2, 9)  ^ AES.mul(a3, 14)
         }
     }
 
@@ -138,3 +155,6 @@ public struct AES128 {
         return result
     }
 }
+
+/// Backwards-compatible alias for the HLS path (AES-128 only there).
+public typealias AES128 = AES

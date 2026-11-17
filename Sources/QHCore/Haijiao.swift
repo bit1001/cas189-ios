@@ -110,7 +110,21 @@ public struct HaijiaoClient: Sendable {
         guard let url = URL(string: Self.host.absoluteString + path) else {
             throw QHError.decode("bad url \(path)")
         }
-        let (body, _) = try await http.data(url)
+        // haijiao.com intermittently resets connections (NSURLError -1); retry briefly.
+        var body: Data?
+        var lastError: Error?
+        for attempt in 0..<3 {
+            do {
+                body = try await http.data(url).0
+                lastError = nil
+                break
+            } catch {
+                lastError = error
+                try? await Task.sleep(nanoseconds: UInt64(400_000_000 * (attempt + 1)))
+            }
+        }
+        if let lastError { throw lastError }
+        guard let body else { throw QHError.api("empty response for \(path)") }
         let root = try JSONSerialization.jsonObject(with: body) as? [String: Any] ?? [:]
         if let success = root["success"] as? Bool, success == false {
             throw QHError.api(root["message"] as? String ?? "request failed")

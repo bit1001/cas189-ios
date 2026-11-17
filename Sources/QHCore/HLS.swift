@@ -6,6 +6,13 @@ public struct HLSPlaylist: Sendable {
     public let iv: [UInt8]?
     public let totalDuration: Double
 
+    public init(segments: [URL], keyURI: URL?, iv: [UInt8]?, totalDuration: Double) {
+        self.segments = segments
+        self.keyURI = keyURI
+        self.iv = iv
+        self.totalDuration = totalDuration
+    }
+
     public static func parse(_ text: String, base: URL) throws -> HLSPlaylist {
         var segments: [URL] = []
         var keyURI: URL?
@@ -102,11 +109,12 @@ public struct HLSDownloader {
         playlistURL: URL,
         progress: (@Sendable (Progress) -> Void)? = nil
     ) async throws -> Data {
-        guard let keyURL = playlist.keyURI else {
-            throw QHError.crypto("playlist is not encrypted")
-        }
-        let key = try await resolveKey(playlistURL: playlistURL, keyURL: keyURL)
-        let cipher = try AES128(key: key)
+        // Keyless playlists (PornShop family) are plain MPEG-TS: no decryption step.
+        let cipher: AES? = try await {
+            guard let keyURL = playlist.keyURI else { return nil }
+            let key = try await resolveKey(playlistURL: playlistURL, keyURL: keyURL)
+            return try AES(key: key)
+        }()
         let iv = playlist.iv ?? [UInt8](repeating: 0, count: 16)
 
         var buffers = [Data?](repeating: nil, count: playlist.segments.count)
@@ -142,8 +150,9 @@ public struct HLSDownloader {
         return out
     }
 
-    private func fetchSegment(_ url: URL, cipher: AES128, iv: [UInt8]) async throws -> Data {
+    private func fetchSegment(_ url: URL, cipher: AES?, iv: [UInt8]) async throws -> Data {
         let (enc, _) = try await http.data(url)
+        guard let cipher else { return enc }
         let plain = try cipher.decryptCBC([UInt8](enc), iv: iv)
         return Data(plain)
     }

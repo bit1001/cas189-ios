@@ -1,26 +1,28 @@
 import SwiftUI
 import QHCore
 
-struct DetailView: View {
-    let topic: Topic
-    @State private var detail: Topic?
-    @State private var error: String?
-    @State private var playTarget: Attachment?
-
-    private var current: Topic { detail ?? topic }
+struct VideoDetailView: View {
+    let video: SiteVideo
+    @State private var playing = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text(current.title).font(.title3.bold())
+                Text(video.title).font(.title3.bold())
 
                 HStack(spacing: 12) {
-                    Text(current.author).font(.footnote).foregroundStyle(.secondary)
-                    Text("\(current.views) 次观看").font(.footnote).foregroundStyle(.secondary)
-                    Text(current.created).font(.footnote).foregroundStyle(.secondary)
+                    if !video.author.isEmpty {
+                        Text(video.author).font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if video.views > 0 {
+                        Text("\(video.views) 次观看").font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if let d = video.durationText {
+                        Text(d).font(.footnote).foregroundStyle(.secondary)
+                    }
                 }
 
-                if let cover = current.cover, let url = URL(string: cover) {
+                if let cover = video.cover, let url = URL(string: cover) {
                     AsyncImage(url: url) { image in
                         image.resizable().aspectRatio(contentMode: .fit)
                     } placeholder: {
@@ -29,38 +31,26 @@ struct DetailView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
 
-                ForEach(current.videos, id: \.id) { video in
-                    Button {
-                        playTarget = video
-                    } label: {
-                        Label("播放 \(video.durationSec.map { "\($0 / 60):\(String(format: "%02d", $0 % 60))" } ?? "")",
-                              systemImage: "play.circle.fill")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(.orange.opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
-                    }
-                    .buttonStyle(.plain)
+                Button {
+                    playing = true
+                } label: {
+                    Label("播放", systemImage: "play.circle.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(.orange.opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
                 }
+                .buttonStyle(.plain)
 
-                if let error {
-                    Text(error).font(.footnote).foregroundStyle(.red)
-                }
-
-                Text("来源：海角 · 附件 \(current.attachments.count) 个")
+                Text("来源：\(video.site)  ·  id \(video.id)")
                     .font(.caption).foregroundStyle(.tertiary)
             }
             .padding(16)
         }
         .navigationTitle("详情")
         .navigationBarTitleDisplayMode(.inline)
-        .fullScreenCover(item: $playTarget) { attachment in
-            PlayerView(topicId: current.id, attachment: attachment)
-        }
-        .task {
-            guard detail == nil else { return }
-            do { detail = try await HaijiaoClient().detail(id: topic.id) }
-            catch { self.error = "\(error)" }
+        .fullScreenCover(isPresented: $playing) {
+            PlayerView(video: video)
         }
     }
 }

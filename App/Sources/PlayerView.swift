@@ -6,20 +6,18 @@ import QHCore
 final class PlayerModel: ObservableObject {
     enum Phase {
         case loading(done: Int, total: Int)
-        case ready(URL)
+        case ready
         case failed(String)
     }
 
     @Published var phase: Phase = .loading(done: 0, total: 0)
     @Published var player: AVPlayer?
 
-    private let topicId: Int
-    private let attachment: Attachment
+    private let video: SiteVideo
     private var started = false
 
-    init(topicId: Int, attachment: Attachment) {
-        self.topicId = topicId
-        self.attachment = attachment
+    init(video: SiteVideo) {
+        self.video = video
     }
 
     func startIfNeeded() {
@@ -28,50 +26,53 @@ final class PlayerModel: ObservableObject {
         Task { await load() }
     }
 
-    func stop() {
-        player?.pause()
-    }
+    func stop() { player?.pause() }
 
     private func load() async {
         do {
-            guard let playlistURL = URL(string: attachment.url) else {
-                throw QHError.api("bad playlist url")
+            let adapter = try SiteRegistry.adapter(for: video.site)
+            let url = try await adapter.playURL(videoID: video.id)
+
+            if !SiteRegistry.requiresLocalDecrypt(video.site) {
+                // Plain HLS (PornShop family / THDH / JAVHD): AVPlayer streams it directly.
+                let p = AVPlayer(url: url)
+                p.play()
+                player = p
+                phase = .ready
+                return
             }
-            let http = HTTPClient()
-            let text = try await http.text(playlistURL)
-            let playlist = try HLSPlaylist.parse(text, base: playlistURL)
+
+            // Encrypted-with-custom-key sources: download, decrypt, then play locally.
+            let http = HTTPClient(insecureTLS: true)
+            let text = try await http.text(url)
+            let playlist = try HLSPlaylist.parse(text, base: url)
             let data = try await HLSDownloader(http: http).download(
                 playlist: playlist,
-                playlistURL: playlistURL
+                playlistURL: url
             ) { [weak self] progress in
                 Task { @MainActor in
                     self?.phase = .loading(done: progress.completed, total: progress.total)
                 }
             }
             let file = FileManager.default.temporaryDirectory
-                .appendingPathComponent("qh-\(topicId)-\(attachment.id).ts")
+                .appendingPathComponent("qh-\(video.site)-\(video.id).ts")
             try data.write(to: file, options: .atomic)
-            let item = AVPlayerItem(url: file)
-            let p = AVPlayer(playerItem: item)
+            let p = AVPlayer(url: file)
             p.play()
             player = p
-            phase = .ready(file)
+            phase = .ready
         } catch {
             phase = .failed("\(error)")
         }
     }
 }
 
-/// v1 playback strategy: download + decrypt the HLS stream with QHCore, then hand
-/// the resulting local MPEG-TS file to AVPlayer. This sidesteps AVPlayer's inability
-/// to apply Haijiao's key transform (raw key XOR jpg material) during streaming.
-/// A later version can serve a rewritten playlist from a local HTTP proxy.
 struct PlayerView: View {
     @StateObject private var model: PlayerModel
     @Environment(\.dismiss) private var dismiss
 
-    init(topicId: Int, attachment: Attachment) {
-        _model = StateObject(wrappedValue: PlayerModel(topicId: topicId, attachment: attachment))
+    init(video: SiteVideo) {
+        _model = StateObject(wrappedValue: PlayerModel(video: video))
     }
 
     var body: some View {
@@ -89,8 +90,7 @@ struct PlayerView: View {
                 }
             case .ready:
                 if let player = model.player {
-                    PlayerSurface(player: player)
-                        .ignoresSafeArea()
+                    PlayerSurface(player: player).ignoresSafeArea()
                 }
             case .failed(let message):
                 VStack(spacing: 12) {
@@ -114,6 +114,7 @@ struct PlayerSurface: UIViewControllerRepresentable {
         let vc = AVPlayerViewController()
         vc.player = player
         vc.showsPlaybackControls = true
+        vc.allowsPictureInPicturePlayback = true
         return vc
     }
 

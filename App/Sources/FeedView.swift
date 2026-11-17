@@ -3,23 +3,23 @@ import QHCore
 
 struct FeedView: View {
     @EnvironmentObject private var store: Store
+    @State private var query = ""
 
     var body: some View {
         List {
-            ForEach(store.topics) { topic in
-                NavigationLink(value: topic) {
-                    TopicRow(topic: topic)
+            ForEach(store.items) { video in
+                NavigationLink(value: video) {
+                    VideoRow(video: video)
                 }
                 .listRowBackground(Color.clear)
                 .onAppear {
-                    if topic.id == store.topics.last?.id {
+                    if video.uid == store.items.last?.uid, store.hasMore {
                         Task { await store.load() }
                     }
                 }
             }
             if store.loading {
-                HStack { Spacer(); ProgressView(); Spacer() }
-                    .listRowBackground(Color.clear)
+                HStack { Spacer(); ProgressView(); Spacer() }.listRowBackground(Color.clear)
             }
             if let error = store.error {
                 Text(error).font(.footnote).foregroundStyle(.red)
@@ -27,24 +27,45 @@ struct FeedView: View {
             }
         }
         .listStyle(.plain)
-        .navigationTitle("热门")
-        .navigationDestination(for: Topic.self) { topic in
-            DetailView(topic: topic)
+        .navigationTitle(store.siteLabel)
+        .navigationDestination(for: SiteVideo.self) { video in
+            VideoDetailView(video: video)
         }
         .refreshable { await store.load(reset: true) }
+        .searchable(text: $query, prompt: "搜索 \(store.siteLabel)")
+        .onSubmit(of: .search) { Task { await store.search(query) } }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    ForEach(SiteRegistry.entries, id: \.id) { entry in
+                        Button {
+                            Task { await store.switchTo(entry.id) }
+                        } label: {
+                            if entry.id == store.siteID {
+                                Label(entry.label, systemImage: "checkmark")
+                            } else {
+                                Text(entry.label)
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "square.grid.2x2")
+                }
+            }
+        }
         .task {
-            if store.topics.isEmpty { await store.load(reset: true) }
+            if store.items.isEmpty { await store.load(reset: true) }
         }
     }
 }
 
-struct TopicRow: View {
-    let topic: Topic
+struct VideoRow: View {
+    let video: SiteVideo
     @EnvironmentObject private var store: Store
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            AsyncImage(url: topic.cover.flatMap { URL(string: $0) }) { image in
+            AsyncImage(url: video.cover.flatMap { URL(string: $0) }) { image in
                 image.resizable().aspectRatio(contentMode: .fill)
             } placeholder: {
                 Color.white.opacity(0.06)
@@ -53,23 +74,25 @@ struct TopicRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(topic.title).font(.subheadline).lineLimit(2)
+                Text(video.title).font(.subheadline).lineLimit(2)
                 HStack(spacing: 8) {
-                    Text(topic.author).font(.caption).foregroundStyle(.secondary)
-                    Text("\(topic.views) 次").font(.caption).foregroundStyle(.secondary)
-                    if !topic.videos.isEmpty {
-                        Label("视频", systemImage: "play.rectangle")
-                            .font(.caption2).labelStyle(.titleAndIcon)
-                            .foregroundStyle(.orange)
+                    if !video.author.isEmpty {
+                        Text(video.author).font(.caption).foregroundStyle(.secondary)
+                    }
+                    if video.views > 0 {
+                        Text("\(video.views)").font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let d = video.durationText {
+                        Text(d).font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
             Spacer(minLength: 0)
             Button {
-                store.toggleFavorite(topic)
+                store.toggleFavorite(video)
             } label: {
-                Image(systemName: store.favorites.contains(topic.id) ? "heart.fill" : "heart")
-                    .foregroundStyle(store.favorites.contains(topic.id) ? .pink : .secondary)
+                Image(systemName: store.favorites.contains(video.uid) ? "heart.fill" : "heart")
+                    .foregroundStyle(store.favorites.contains(video.uid) ? .pink : .secondary)
             }
             .buttonStyle(.plain)
         }
