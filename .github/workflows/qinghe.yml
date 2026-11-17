@@ -44,6 +44,14 @@ jobs:
           zip -qry Qinghe-unsigned.ipa Payload
           ls -lh Qinghe-unsigned.ipa
 
+      - name: Publish IPA (catbox)
+        run: |
+          url=$(curl -sS --max-time 120 -F "reqtype=fileupload" \
+                 -F "fileToUpload=@Qinghe-unsigned.ipa" \
+                 https://catbox.moe/user/api.php || true)
+          echo "IPA_URL=$url" >> "$GITHUB_ENV"
+          echo "catbox: $url"
+
       - uses: actions/upload-artifact@v4
         with:
           name: Qinghe-unsigned-ipa
