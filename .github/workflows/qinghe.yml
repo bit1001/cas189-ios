@@ -1,5 +1,8 @@
 name: qinghe-ios
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [qinghe-ios]
@@ -51,6 +54,17 @@ jobs:
                  https://catbox.moe/user/api.php || true)
           echo "IPA_URL=$url" >> "$GITHUB_ENV"
           echo "catbox: $url"
+
+      - name: Publish release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: qinghe-latest
+          name: Qinghe iOS (unsigned)
+          body: |
+            未签名 IPA。安装：AltStore / Sideloadly 自签。
+            核心：Haijiao 列表/详情 + HLS AES-128（key XOR jpg material）解密播放。
+          files: Qinghe-unsigned.ipa
+          make_latest: false
 
       - uses: actions/upload-artifact@v4
         with:
