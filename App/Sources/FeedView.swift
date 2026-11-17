@@ -44,7 +44,7 @@ struct TopicRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            AsyncImage(url: topic.cover.flatMap(URL.init)) { image in
+            AsyncImage(url: topic.cover.flatMap { URL(string: $0) }) { image in
                 image.resizable().aspectRatio(contentMode: .fill)
             } placeholder: {
                 Color.white.opacity(0.06)
