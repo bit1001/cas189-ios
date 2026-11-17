@@ -82,9 +82,11 @@ public struct HTTPClient {
         headers: [String: String] = [:],
         body: Data? = nil
     ) async throws -> (Data, HTTPURLResponse) {
+        #if os(Linux)
         if insecureTLS && !Self.hasSecureTransport {
             return try curlData(url, method: method, headers: headers, body: body)
         }
+        #endif
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
@@ -101,6 +103,7 @@ public struct HTTPClient {
         return (data, http)
     }
 
+    #if os(Linux)
     /// Linux-only test path: shell out to curl so self-signed sites can be exercised.
     private func curlData(_ url: URL, method: String, headers: [String: String], body: Data?) throws -> (Data, HTTPURLResponse) {
         let jar = NSTemporaryDirectory() + "qh-curl-cookies-\(getpid()).txt"
@@ -138,6 +141,7 @@ public struct HTTPClient {
         let resp = HTTPURLResponse(url: url, statusCode: code, httpVersion: nil, headerFields: nil)!
         return (Data(payload), resp)
     }
+    #endif
 
     public func text(_ url: URL, headers: [String: String] = [:]) async throws -> String {
         let (data, _) = try await data(url, headers: headers)
