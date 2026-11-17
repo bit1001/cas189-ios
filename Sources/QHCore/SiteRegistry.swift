@@ -53,6 +53,7 @@ public enum SiteRegistry {
         Entry(id: "thdh", label: "探花", group: "独立站"),
         Entry(id: "javhd", label: "JAVHD", group: "独立站"),
         Entry(id: "douyin", label: "黑暗抖阴", group: "独立站"),
+        Entry(id: "pinse", label: "91PinSe", group: "独立站"),
     ]
 
     public static func adapter(for siteID: String) throws -> any SiteAdapter {
@@ -66,14 +67,18 @@ public enum SiteRegistry {
             return try JavhdClient()
         case "douyin":
             return try DouyinClient()
+        case "pinse":
+            return try PinseClient()
         default:
             throw QHError.api("unknown site \(siteID)")
         }
     }
 
-    /// Haijiao encrypts its HLS key with a per-video transform, so AVPlayer cannot
-    /// play it directly — those videos are downloaded first.
+    /// Sites whose streams AVPlayer cannot play as-is:
+    ///  * haijiao — HLS key needs a per-video JPEG-XOR transform
+    ///  * douyin — HLS key is RSA-wrapped
+    ///  * pinse  — segments are MPEG-TS but named `.jpg`, so AVPlayer treats them as images
     public static func requiresLocalDecrypt(_ siteID: String) -> Bool {
-        siteID == "haijiao" || siteID == "douyin"
+        siteID == "haijiao" || siteID == "douyin" || siteID == "pinse"
     }
 }

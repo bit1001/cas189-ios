@@ -38,6 +38,8 @@ struct QHCLI {
                 try await psDownload(args)
             case "list":
                 try await anyList(args)
+            case "find":
+                try await anySearch(args)
             case "play":
                 try await anyPlay(args)
             case "dyhls":
@@ -199,6 +201,16 @@ struct QHCLI {
             if let a = v.author.isEmpty ? nil : v.author { print("      · \(a)") }
             if let c = v.cover { print("      cover \(c)") }
         }
+    }
+
+    /// qh find <site> <keyword> [page]
+    static func anySearch(_ args: [String]) async throws {
+        guard args.count >= 2 else { throw QHError.api("find <site> <keyword> [page]") }
+        let page = args.count > 2 ? (Int(args[2]) ?? 1) : 1
+        let adapter = try SiteRegistry.adapter(for: args[0])
+        let result = try await adapter.search(args[1], page: page)
+        print("[\(args[0])] search \"\(args[1])\" items \(result.items.count)")
+        for v in result.items.prefix(6) { print("  \(v.id)  \(v.title)") }
     }
 
     /// qh play <site> <videoId> — resolve and print the playable URL, then verify it.
