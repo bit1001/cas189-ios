@@ -40,6 +40,10 @@ struct QHCLI {
                 try await anyList(args)
             case "play":
                 try await anyPlay(args)
+            case "dyhls":
+                try await douyinHLS(args)
+            case "cover":
+                try await douyinCover(args)
             case "sites":
                 for s in PornShopClient.sites {
                     print("\(s.id)\t\(s.label)\t\(s.origin)")
@@ -211,6 +215,39 @@ struct QHCLI {
         ])
         let head = String(decoding: data.prefix(120), as: UTF8.self)
         print("http \(resp.statusCode)  bytes \(data.count)  head: \(head.replacingOccurrences(of: "\n", with: " | "))")
+    }
+
+    /// Download a Douyin preview HLS end-to-end (RSA-wrapped key → AES-128 segments).
+    static func douyinHLS(_ args: [String]) async throws {
+        guard let raw = args.first, let url = URL(string: raw) else {
+            throw QHError.api("dyhls <m3u8-url> [--segments N] [-o out.ts]")
+        }
+        var limit = 3
+        var output = "douyin-preview.ts"
+        if let i = args.firstIndex(of: "--segments"), i + 1 < args.count { limit = Int(args[i + 1]) ?? limit }
+        if let i = args.firstIndex(of: "-o"), i + 1 < args.count { output = args[i + 1] }
+        let http = HTTPClient(insecureTLS: true)
+        var playlist = try HLSPlaylist.parse(try await http.text(url), base: url)
+        print("segments: \(playlist.segments.count)  encrypted: \(playlist.keyURI != nil)")
+        playlist = HLSPlaylist(segments: Array(playlist.segments.prefix(limit)),
+                               keyURI: playlist.keyURI, iv: playlist.iv,
+                               totalDuration: playlist.totalDuration)
+        let data = try await HLSDownloader(http: http).download(
+            playlist: playlist, playlistURL: url, keyMode: .douyinRSA)
+        try data.write(to: URL(fileURLWithPath: output))
+        print("written \(data.count) bytes -> \(output)  first=\(String(format: "0x%02x", data.first ?? 0))")
+    }
+
+    /// Fetch a Douyin cover and run the RC4 decode; verifies the image header.
+    static func douyinCover(_ args: [String]) async throws {
+        guard let raw = args.first, let url = URL(string: raw) else { throw QHError.api("cover <url> [-o out.jpg]") }
+        var output = "cover.jpg"
+        if let i = args.firstIndex(of: "-o"), i + 1 < args.count { output = args[i + 1] }
+        let (raw_data, _) = try await HTTPClient(insecureTLS: true).data(url)
+        let decoded = DouyinCrypto.decodeCover(raw_data)
+        try decoded.write(to: URL(fileURLWithPath: output))
+        print("raw head: \(String(format: "%02x%02x%02x%02x", raw_data[0], raw_data[1], raw_data[2], raw_data[3]))")
+        print("out head: \(String(format: "%02x%02x%02x%02x", decoded[0], decoded[1], decoded[2], decoded[3]))  bytes \(decoded.count) -> \(output)")
     }
 
     static func selftest() throws {

@@ -68,6 +68,12 @@ public extension Data {
 /// Haijiao quirk (verified live): the AES key is not used raw. It is XORed with a
 /// per-video "material" blob that is served as Base64 text at the playlist URL with
 /// `.m3u8` replaced by `.jpg`. Without that step the first TS byte is never 0x47.
+public enum HLSKeyMode {
+    case raw            // key 就是文件里的 16 字节
+    case haijiaoJpegXOR // 海角：key XOR 同目录 .jpg 里的 material
+    case douyinRSA      // 黑暗抖阴：RSA-OAEP(SHA-256) 包裹的 16 字节 key
+}
+
 public struct HLSDownloader {
     public struct Progress: Sendable {
         public let completed: Int
@@ -82,8 +88,10 @@ public struct HLSDownloader {
         self.concurrency = max(1, concurrency)
     }
 
-    public func resolveKey(playlistURL: URL, keyURL: URL, applyJpegXor: Bool = true) async throws -> [UInt8] {
+    public func resolveKey(playlistURL: URL, keyURL: URL, applyJpegXor: Bool = true,
+                           keyMode: HLSKeyMode = .raw) async throws -> [UInt8] {
         let (keyData, _) = try await http.data(keyURL)
+        if keyMode == .douyinRSA { return try DouyinCrypto.unwrapMediaKey(keyData) }
         guard keyData.count == 16 else { throw QHError.crypto("key is \(keyData.count) bytes") }
 
         // material: same path, .m3u8 -> .jpg, body is Base64 text
@@ -109,12 +117,13 @@ public struct HLSDownloader {
         playlist: HLSPlaylist,
         playlistURL: URL,
         applyJpegXor: Bool = true,
+        keyMode: HLSKeyMode = .raw,
         progress: (@Sendable (Progress) -> Void)? = nil
     ) async throws -> Data {
         // Keyless playlists (PornShop family) are plain MPEG-TS: no decryption step.
         let cipher: AES? = try await {
             guard let keyURL = playlist.keyURI else { return nil }
-            let key = try await resolveKey(playlistURL: playlistURL, keyURL: keyURL, applyJpegXor: applyJpegXor)
+            let key = try await resolveKey(playlistURL: playlistURL, keyURL: keyURL, applyJpegXor: applyJpegXor, keyMode: keyMode)
             return try AES(key: key)
         }()
         let iv = playlist.iv ?? [UInt8](repeating: 0, count: 16)

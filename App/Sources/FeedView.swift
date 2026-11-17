@@ -65,11 +65,7 @@ struct VideoRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            AsyncImage(url: video.cover.flatMap { URL(string: $0) }) { image in
-                image.resizable().aspectRatio(contentMode: .fill)
-            } placeholder: {
-                Color.white.opacity(0.06)
-            }
+            CoverImage(path: video.cover, rc4: video.site == "douyin")
             .frame(width: 108, height: 72)
             .clipShape(RoundedRectangle(cornerRadius: 8))
 

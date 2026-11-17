@@ -49,7 +49,8 @@ final class PlayerModel: ObservableObject {
             let data = try await HLSDownloader(http: http).download(
                 playlist: playlist,
                 playlistURL: url,
-                applyJpegXor: video.site == "haijiao"
+                applyJpegXor: video.site == "haijiao",
+                keyMode: video.site == "douyin" ? .douyinRSA : .raw
             ) { [weak self] progress in
                 Task { @MainActor in
                     self?.phase = .loading(done: progress.completed, total: progress.total)

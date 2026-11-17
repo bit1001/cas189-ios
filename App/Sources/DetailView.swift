@@ -22,13 +22,10 @@ struct VideoDetailView: View {
                     }
                 }
 
-                if let cover = video.cover, let url = URL(string: cover) {
-                    AsyncImage(url: url) { image in
-                        image.resizable().aspectRatio(contentMode: .fit)
-                    } placeholder: {
-                        RoundedRectangle(cornerRadius: 10).fill(.white.opacity(0.06)).frame(height: 220)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                if video.cover != nil {
+                    CoverImage(path: video.cover, rc4: video.site == "douyin")
+                        .frame(height: 220)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
 
                 Button {
