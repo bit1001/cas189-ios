@@ -31,19 +31,28 @@ jobs:
 
       - name: Build unsigned app
         run: |
+          set -euo pipefail
           xcodebuild \
             -project App/Qinghe.xcodeproj \
             -scheme Qinghe \
             -configuration Release \
+            -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
+            -archivePath build/Qinghe.xcarchive \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build | tail -40
+            archive > build.log 2>&1 || { tail -80 build.log; exit 1; }
+          tail -5 build.log
 
       - name: Package IPA
         run: |
+          set -euo pipefail
+          APP="build/Qinghe.xcarchive/Products/Applications/Qinghe.app"
+          test -d "$APP" || { echo "missing $APP"; ls -R build/Build/Products | head -40; exit 1; }
+          test -f "$APP/Qinghe" || { echo "missing executable in $APP"; ls -la "$APP"; exit 1; }
+          du -sh "$APP"
           mkdir -p Payload
-          cp -R "build/Build/Products/Release-iphoneos/Qinghe.app" Payload/
+          cp -R "$APP" Payload/
           zip -qry Qinghe-unsigned.ipa Payload
           ls -lh Qinghe-unsigned.ipa
 
