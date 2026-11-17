@@ -39,15 +39,24 @@ jobs:
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
-            -archivePath build/Qinghe.xcarchive \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            archive > build.log 2>&1 || { tail -80 build.log; exit 1; }
+            build > build.log 2>&1 || { tail -80 build.log; exit 1; }
           tail -5 build.log
+
+      - name: Commit build log on failure
+        if: failure()
+        run: |
+          git config user.name "ci"
+          git config user.email "ci@users.noreply.github.com"
+          tail -250 build.log > ci-build.log 2>/dev/null || echo "no build.log" > ci-build.log
+          git add ci-build.log
+          git commit -m "ci: build failure log [skip ci]" || true
+          git push || true
 
       - name: Package IPA
         run: |
           set -euo pipefail
-          APP="build/Qinghe.xcarchive/Products/Applications/Qinghe.app"
+          APP="build/Build/Products/Release-iphoneos/Qinghe.app"
           test -d "$APP" || { echo "missing $APP"; ls -R build/Build/Products | head -40; exit 1; }
           test -f "$APP/Qinghe" || { echo "missing executable in $APP"; ls -la "$APP"; exit 1; }
           du -sh "$APP"
