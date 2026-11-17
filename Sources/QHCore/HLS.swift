@@ -82,11 +82,12 @@ public struct HLSDownloader {
         self.concurrency = max(1, concurrency)
     }
 
-    public func resolveKey(playlistURL: URL, keyURL: URL) async throws -> [UInt8] {
+    public func resolveKey(playlistURL: URL, keyURL: URL, applyJpegXor: Bool = true) async throws -> [UInt8] {
         let (keyData, _) = try await http.data(keyURL)
         guard keyData.count == 16 else { throw QHError.crypto("key is \(keyData.count) bytes") }
 
         // material: same path, .m3u8 -> .jpg, body is Base64 text
+        guard applyJpegXor else { return Array(keyData) }
         let jpgURL = playlistURL.deletingPathExtension().appendingPathExtension("jpg")
         let materialText: String
         do {
@@ -107,12 +108,13 @@ public struct HLSDownloader {
     public func download(
         playlist: HLSPlaylist,
         playlistURL: URL,
+        applyJpegXor: Bool = true,
         progress: (@Sendable (Progress) -> Void)? = nil
     ) async throws -> Data {
         // Keyless playlists (PornShop family) are plain MPEG-TS: no decryption step.
         let cipher: AES? = try await {
             guard let keyURL = playlist.keyURI else { return nil }
-            let key = try await resolveKey(playlistURL: playlistURL, keyURL: keyURL)
+            let key = try await resolveKey(playlistURL: playlistURL, keyURL: keyURL, applyJpegXor: applyJpegXor)
             return try AES(key: key)
         }()
         let iv = playlist.iv ?? [UInt8](repeating: 0, count: 16)

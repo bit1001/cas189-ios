@@ -61,7 +61,72 @@ public struct AES {
         return Array(out.dropLast(n))
     }
 
-    // MARK: - key schedule (encryption direction, used in reverse)
+
+    // MARK: - encryption (Douyin needs AES-192-CBC in both directions)
+
+    public func encryptBlock(_ input: [UInt8]) throws -> [UInt8] {
+        guard input.count == 16 else { throw QHError.crypto("block must be 16 bytes") }
+        var s = input
+        for i in 0..<16 { s[i] ^= roundKeys[i] }
+        for round in 1..<rounds {
+            subBytes(&s)
+            shiftRows(&s)
+            mixColumns(&s)
+            for i in 0..<16 { s[i] ^= roundKeys[round * 16 + i] }
+        }
+        subBytes(&s)
+        shiftRows(&s)
+        for i in 0..<16 { s[i] ^= roundKeys[rounds * 16 + i] }
+        return s
+    }
+
+    /// CBC encryption with PKCS#7 padding (Java's AES/CBC/PKCS5Padding is the same for 16-byte blocks).
+    public func encryptCBC(_ data: [UInt8], iv: [UInt8]) throws -> [UInt8] {
+        guard iv.count == 16 else { throw QHError.crypto("IV must be 16 bytes") }
+        var input = data
+        let pad = 16 - (data.count % 16)
+        input.append(contentsOf: [UInt8](repeating: UInt8(pad), count: pad))
+        var out: [UInt8] = []
+        out.reserveCapacity(input.count)
+        var prev = iv
+        var offset = 0
+        while offset < input.count {
+            var block = Array(input[offset..<(offset + 16)])
+            for i in 0..<16 { block[i] ^= prev[i] }
+            let enc = try encryptBlock(block)
+            out.append(contentsOf: enc)
+            prev = enc
+            offset += 16
+        }
+        return out
+    }
+
+    private func subBytes(_ s: inout [UInt8]) {
+        for i in 0..<16 { s[i] = AES.sbox[Int(s[i])] }
+    }
+
+    private func shiftRows(_ s: inout [UInt8]) {
+        var t = s
+        for r in 0..<4 {
+            for c in 0..<4 {
+                t[c * 4 + r] = s[((c + r) % 4) * 4 + r]
+            }
+        }
+        s = t
+    }
+
+    private func mixColumns(_ s: inout [UInt8]) {
+        for c in 0..<4 {
+            let i = c * 4
+            let a0 = s[i], a1 = s[i + 1], a2 = s[i + 2], a3 = s[i + 3]
+            s[i]     = AES.mul(a0, 2) ^ AES.mul(a1, 3) ^ a2 ^ a3
+            s[i + 1] = a0 ^ AES.mul(a1, 2) ^ AES.mul(a2, 3) ^ a3
+            s[i + 2] = a0 ^ a1 ^ AES.mul(a2, 2) ^ AES.mul(a3, 3)
+            s[i + 3] = AES.mul(a0, 3) ^ a1 ^ a2 ^ AES.mul(a3, 2)
+        }
+    }
+
+    // MARK: - key schedule
 
     private static let sbox: [UInt8] = [
         0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,

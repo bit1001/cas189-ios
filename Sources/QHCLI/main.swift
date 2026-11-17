@@ -228,6 +228,16 @@ struct QHCLI {
         let p256 = try AES(key: Array(k256)).decryptBlock(Array(c256))
         print("AES-256 block:", Array(p256) == Array(Data(hexString: "00112233445566778899aabbccddeeff")!) ? "OK" : "FAIL")
 
+        // AES-192 round-trip with the Douyin constants, cross-checkable with openssl.
+        let dyKey = Array("KivItun6MHYOU55hlQECIa==".utf8)
+        let dyIV = Array("efa3s7w8fbe3jae2".utf8)
+        let msg = Array(#"{"page":1,"pageSize":3}"#.utf8)
+        let aes192 = try AES(key: dyKey)
+        let enc = try aes192.encryptCBC(msg, iv: dyIV)
+        let dec = try aes192.decryptCBC(enc, iv: dyIV, removePadding: true)
+        print("AES-192 CBC roundtrip:", dec == msg ? "OK" : "FAIL")
+        print("AES192SAMPLE:" + Data(enc).base64EncodedString())
+
         let peel = Base64Peel.peel("V3hWbGMybElUMmx1YzNSbFpDQT0=")
         print("base64 peel:", peel)
     }
