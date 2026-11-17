@@ -1,0 +1,51 @@
+name: qinghe-ios
+
+on:
+  push:
+    branches: [qinghe-ios]
+  workflow_dispatch:
+
+jobs:
+  core-tests:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift tests (macOS)
+        run: swift test
+
+  build-ipa:
+    needs: core-tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: App
+        run: xcodegen generate
+
+      - name: Build unsigned app
+        run: |
+          xcodebuild \
+            -project App/Qinghe.xcodeproj \
+            -scheme Qinghe \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tail -40
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R "build/Build/Products/Release-iphoneos/Qinghe.app" Payload/
+          zip -qry Qinghe-unsigned.ipa Payload
+          ls -lh Qinghe-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Qinghe-unsigned-ipa
+          path: Qinghe-unsigned.ipa
+          retention-days: 14

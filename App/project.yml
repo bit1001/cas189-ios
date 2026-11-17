@@ -1,0 +1,35 @@
+name: Qinghe
+options:
+  bundleIdPrefix: one.qinghe
+  deploymentTarget:
+    iOS: "16.0"
+packages:
+  QHCore:
+    path: ..
+targets:
+  Qinghe:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    dependencies:
+      - package: QHCore
+        product: QHCore
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: 青禾学堂
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        SWIFT_VERSION: "5.9"
+        PRODUCT_BUNDLE_IDENTIFIER: one.qinghe.app
+        TARGETED_DEVICE_FAMILY: "1"
