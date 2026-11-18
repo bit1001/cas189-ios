@@ -67,33 +67,33 @@ struct SettingsView: View {
                 settingsCard("隐私与存储") {
                     VStack(spacing: 4) {
                         ToggleRow("隐私保护", isOn: $privacy)
-                        NavRow("缓存", detail: "存储占用还在估算") {}
-                        NavRow("观看足迹", detail: "没有记录") {}
+                        NavRow(title: "缓存", detail: "存储占用还在估算") {}
+                        NavRow(title: "观看足迹", detail: "没有记录") {}
                         Button("清理缓存") {}.font(.caption).foregroundStyle(p.accentPrimary)
                     }
                 }
 
                 settingsCard("账号与平台") {
                     VStack(spacing: 4) {
-                        NavRow("海角账号", detail: "未登录") { showLogin = true }
-                        NavRow("平台", detail: "") {}
+                        NavRow(title: "海角账号", detail: "未登录") { showLogin = true }
+                        NavRow(title: "平台", detail: "") {}
                     }
                 }
 
                 settingsCard("数据") {
                     VStack(spacing: 4) {
-                        NavRow("导出片库备份", detail: "") {}
-                        NavRow("导入片库备份", detail: "") {}
-                        NavRow("导出诊断", detail: "") {}
-                        NavRow("清除诊断记录", detail: "") {}
-                        NavRow("恢复默认设置", detail: "") {}
+                        NavRow(title: "导出片库备份", detail: "") {}
+                        NavRow(title: "导入片库备份", detail: "") {}
+                        NavRow(title: "导出诊断", detail: "") {}
+                        NavRow(title: "清除诊断记录", detail: "") {}
+                        NavRow(title: "恢复默认设置", detail: "") {}
                     }
                 }
 
                 settingsCard("关于") {
                     VStack(spacing: 4) {
-                        NavRow("使用帮助", detail: "") { showHelp = true }
-                        NavRow("版本", detail: "青禾学堂 · v1.9.5") {}
+                        NavRow(title: "使用帮助", detail: "") { showHelp = true }
+                        NavRow(title: "版本", detail: "青禾学堂 · v1.9.5") {}
                     }
                 }
             }

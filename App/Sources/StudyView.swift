@@ -53,7 +53,7 @@ struct StudyView: View {
                         LearnPage(showReader: $showReader).tag(StudyTab.learn)
                         CoursesPage(showJoin: $showJoin).tag(StudyTab.courses)
                         DiscoverPage().tag(StudyTab.discover)
-                        ProfilePage(nickname: $nickname, showGoal: $showGoal, showNickname: $showNickname)
+                        ProfilePage(nickname: $nickname, goal: $goal, showGoal: $showGoal, showNickname: $showNickname)
                             .tag(StudyTab.profile)
                     }
                     .tabViewStyle(.page(indexDisplayMode: .never))
@@ -237,6 +237,7 @@ private struct DiscoverPage: View {
 // MARK: - Profile page
 private struct ProfilePage: View {
     @Binding var nickname: String
+    @Binding var goal: Int
     @Binding var showGoal: Bool
     @Binding var showNickname: Bool
     var body: some View {
