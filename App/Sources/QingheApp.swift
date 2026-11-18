@@ -4,15 +4,43 @@ import QHCore
 @main
 struct QingheApp: App {
     @StateObject private var store = Store()
+    @StateObject private var theme = ThemeStore()
     var body: some Scene {
         WindowGroup {
-            NavigationStack {
-                FeedView()
-            }
-            .environmentObject(store)
-            .preferredColorScheme(.dark)
-            .tint(.orange)
+            RootView()
+                .environmentObject(store)
+                .environmentObject(theme)
         }
+    }
+}
+
+struct RootView: View {
+    @EnvironmentObject private var theme: ThemeStore
+    @Environment(\.colorScheme) private var systemScheme
+    @State private var selection: AppTab = .home
+
+    private var palette: GlassPalette {
+        theme.palette(systemDark: systemScheme == .dark)
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            GlassBackground()
+            Group {
+                switch selection {
+                case .home: FeedView()
+                case .browse: Text("浏览").foregroundStyle(palette.textPrimary)
+                case .search: Text("搜索").foregroundStyle(palette.textPrimary)
+                case .library: Text("资料库").foregroundStyle(palette.textPrimary)
+                case .settings: Text("设置").foregroundStyle(palette.textPrimary)
+                }
+            }
+            .environment(\.palette, palette)
+            DockView(selection: $selection)
+                .environment(\.palette, palette)
+        }
+        .environment(\.palette, palette)
+        .tint(palette.accentPrimary)
     }
 }
 
