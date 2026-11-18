@@ -41,9 +41,6 @@ struct FeedView: View {
             }
             .padding(.bottom, 100)
         }
-        .navigationDestination(for: SiteVideo.self) { video in
-            VideoDetailView(video: video)
-        }
         .searchable(text: $query, prompt: "搜索片名或标签")
         .onSubmit(of: .search) { Task { await store.search(query) } }
         .toolbar {

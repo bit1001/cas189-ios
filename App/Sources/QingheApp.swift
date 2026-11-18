@@ -24,20 +24,33 @@ struct RootView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            GlassBackground()
-            Group {
-                switch selection {
-                case .home: FeedView()
-                case .browse: Text("浏览").foregroundStyle(palette.textPrimary)
-                case .search: Text("搜索").foregroundStyle(palette.textPrimary)
-                case .library: Text("资料库").foregroundStyle(palette.textPrimary)
-                case .settings: Text("设置").foregroundStyle(palette.textPrimary)
+        NavigationStack {
+            ZStack(alignment: .bottom) {
+                GlassBackground()
+                Group {
+                    switch selection {
+                    case .home: FeedView()
+                    case .browse: BrowseView()
+                    case .search: SearchView()
+                    case .library: LibraryView()
+                    case .settings: SettingsView()
+                    }
+                }
+                .environment(\.palette, palette)
+                DockView(selection: $selection)
+                    .environment(\.palette, palette)
+            }
+            .navigationDestination(for: SiteVideo.self) { video in
+                VideoDetailView(video: video)
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink { StudyView() } label: {
+                        Label("青禾学堂", systemImage: "book.fill")
+                            .font(.caption)
+                    }
                 }
             }
-            .environment(\.palette, palette)
-            DockView(selection: $selection)
-                .environment(\.palette, palette)
         }
         .environment(\.palette, palette)
         .tint(palette.accentPrimary)
