@@ -59,7 +59,8 @@ struct RootView: View {
 
 @MainActor
 final class Store: ObservableObject {
-    @Published var siteID: String = "haijiao"
+    @Published var siteID: String = "hstv"
+    @Published var section: String = "hot"
     @Published var items: [SiteVideo] = []
     @Published var page = 1
     @Published var loading = false
@@ -77,9 +78,22 @@ final class Store: ObservableObject {
         SiteRegistry.entries.first { $0.id == siteID }?.label ?? siteID
     }
 
+    var sections: [SelfShotSection] { SelfShotCatalog.sections(for: siteID) }
+
     func switchTo(_ id: String) async {
         guard id != siteID else { return }
         siteID = id
+        section = SelfShotCatalog.sections(for: id).first?.key ?? "hot"
+        items = []
+        page = 1
+        hasMore = true
+        error = nil
+        await load(reset: true)
+    }
+
+    func switchSection(_ key: String) async {
+        guard key != section else { return }
+        section = key
         items = []
         page = 1
         hasMore = true
@@ -94,7 +108,7 @@ final class Store: ObservableObject {
         let target = reset ? 1 : page
         do {
             let adapter = try SiteRegistry.adapter(for: siteID)
-            let result = try await adapter.feed(page: target)
+            let result = try await adapter.feed(section: section, page: target)
             items = reset ? result.items : items + result.items
             page = target + 1
             hasMore = !result.items.isEmpty

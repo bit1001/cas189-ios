@@ -47,9 +47,18 @@ struct QHCLI {
             case "cover":
                 try await douyinCover(args)
             case "sites":
-                for s in PornShopClient.sites {
-                    print("\(s.id)\t\(s.label)\t\(s.origin)")
+                for s in SiteRegistry.entries {
+                    print("\(s.id)\t\(s.label)\t\(s.group)")
                 }
+            case "sections":
+                guard let site = args.first else { throw QHError.api("sections <site>") }
+                for sec in SelfShotCatalog.sections(for: site) {
+                    print("\(sec.key)\t\(sec.label)")
+                }
+            case "section":
+                // qh section <site> <sectionKey> [page]
+                guard args.count >= 2 else { throw QHError.api("section <site> <key> [page]") }
+                try await sectionFeed(args)
             case "selftest":
                 try selftest()
             default:
@@ -200,6 +209,19 @@ struct QHCLI {
             print("  \(v.id)  \(v.title)")
             if let a = v.author.isEmpty ? nil : v.author { print("      · \(a)") }
             if let c = v.cover { print("      cover \(c)") }
+        }
+    }
+
+    /// qh section <site> <key> [page] — self-shot section feed, direct connection.
+    static func sectionFeed(_ args: [String]) async throws {
+        let site = args[0]
+        let key = args[1]
+        let page = args.count > 2 ? (Int(args[2]) ?? 1) : 1
+        let adapter = try SiteRegistry.adapter(for: site)
+        let result = try await adapter.feed(section: key, page: page)
+        print("[\(site)] section=\(key) page=\(page) items=\(result.items.count)")
+        for v in result.items.prefix(8) {
+            print("  \(v.id)  \(v.title)")
         }
     }
 

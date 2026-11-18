@@ -27,7 +27,21 @@ public struct PinseClient: SiteAdapter {
     }
 
     public func feed(page: Int) async throws -> SitePage {
-        let html = try await http.text(try Self.url("/v/?page=\(max(1, page))"))
+        try await feed(section: "latest", page: page)
+    }
+
+    /// Self-shot section. `latest`/`hot` search keyword=自拍 (site's self-shot tag);
+    /// other keys are the site's rank pages (current-hot/weekly-hot/...).
+    public func feed(section: String, page: Int) async throws -> SitePage {
+        let p = max(1, page)
+        let html: String
+        if section == "latest" || section == "hot" || section.isEmpty {
+            var path = "/v/search?keyword=%E8%87%AA%E6%8B%8D&page=\(p)"
+            if section == "hot" { path += "&sort=hot" }
+            html = try await http.text(try Self.url(path))
+        } else {
+            html = try await http.text(try Self.url("/rank/\(section)?page=\(p)"))
+        }
         try Self.rejectGate(html)
         return SitePage(site: siteID, page: page, items: Self.parseCards(html))
     }

@@ -48,7 +48,16 @@ public protocol SiteAdapter: Sendable {
     var siteID: String { get }
     var displayName: String { get }
     func feed(page: Int) async throws -> SitePage
+    /// Self-shot section feed. Default falls back to `feed(page:)` for adapters
+    /// that don't implement per-section parsing.
+    func feed(section: String, page: Int) async throws -> SitePage
     func search(_ keyword: String, page: Int) async throws -> SitePage
     /// Resolve a playable m3u8 (or mp4) URL for the given site-native id.
     func playURL(videoID: String) async throws -> URL
+}
+
+extension SiteAdapter {
+    public func feed(section: String, page: Int) async throws -> SitePage {
+        try await feed(page: page)
+    }
 }

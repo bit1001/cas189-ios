@@ -12,10 +12,8 @@ public struct PornShopClient: SiteAdapter {
     }
 
     public static let sites: [Site] = [
-        Site(id: "pornshop", app: "pornshop.one", origin: "https://pornshop.one/", label: "PornShop"),
         Site(id: "hstv", app: "hstv.fun", origin: "https://hstv.fun/", label: "好色TV"),
         Site(id: "theporny", app: "theporny.com", origin: "https://theporny.com/", label: "thePorny"),
-        Site(id: "51porn", app: "51porn.com", origin: "https://51porn.com/", label: "51视频"),
     ]
 
     public static let hosts = [
@@ -45,7 +43,15 @@ public struct PornShopClient: SiteAdapter {
     // MARK: - SiteAdapter
 
     public func feed(page: Int) async throws -> SitePage {
-        let arr = try await callArray("/sevenVideos?page=\(max(1, page))&type=")
+        // Default 自拍 landing = 国产自拍 ("hot"), the main shelf.
+        try await feed(section: "hot", page: page)
+    }
+
+    /// Self-shot section: the section key is sent verbatim as the API `type`
+    /// (verified against the live API: hot/recent/favs/month_hot/... are distinct).
+    public func feed(section: String, page: Int) async throws -> SitePage {
+        let type = section.isEmpty ? "hot" : section
+        let arr = try await callArray("/sevenVideos?page=\(max(1, page))&type=\(type)")
         return SitePage(site: siteID, page: page, items: arr.compactMap(parse))
     }
 
