@@ -25,18 +25,19 @@ struct RootView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .bottom) {
-                GlassBackground()
-                Group {
-                    switch selection {
-                    case .home: FeedView()
-                    case .browse: BrowseView()
-                    case .search: SearchView()
-                    case .library: LibraryView()
-                    case .settings: SettingsView()
-                    }
+            Group {
+                switch selection {
+                case .home: FeedView()
+                case .browse: BrowseView()
+                case .search: SearchView()
+                case .library: LibraryView()
+                case .settings: SettingsView()
                 }
-                .environment(\.palette, palette)
+            }
+            .environment(\.palette, palette)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(GlassBackground().environment(\.palette, palette))
+            .safeAreaInset(edge: .bottom, spacing: 0) {
                 DockView(selection: $selection)
                     .environment(\.palette, palette)
             }
@@ -69,6 +70,7 @@ final class Store: ObservableObject {
     @Published var favorites: Set<String> = []
 
     private var loadedSites: Set<String> = []
+    private var generation = 0
 
     init() {
         favorites = Set(UserDefaults.standard.stringArray(forKey: "favs") ?? [])
@@ -92,32 +94,44 @@ final class Store: ObservableObject {
     }
 
     func switchSection(_ key: String) async {
-        guard key != section else { return }
         section = key
-        items = []
-        page = 1
-        hasMore = true
-        error = nil
-        await load(reset: true)
+        await reloadCurrent()
     }
 
     func load(reset: Bool = false) async {
-        if loading { return }
+        // A reset (site/section switch, pull-to-refresh) must never be blocked
+        // by an in-flight pagination load — that was making chips look dead.
+        if loading && !reset { return }
         loading = true
         error = nil
+        generation += 1
+        let token = generation
+        let site = siteID
+        let sec = section
         let target = reset ? 1 : page
         do {
-            let adapter = try SiteRegistry.adapter(for: siteID)
-            let result = try await adapter.feed(section: section, page: target)
+            let adapter = try SiteRegistry.adapter(for: site)
+            let result = try await adapter.feed(section: sec, page: target)
+            guard token == generation else { return }   // a newer switch superseded us
             items = reset ? result.items : items + result.items
             page = target + 1
             hasMore = !result.items.isEmpty
-            loadedSites.insert(siteID)
+            loadedSites.insert(site)
         } catch {
+            guard token == generation else { return }
             self.error = "\(error)"
             hasMore = false
         }
         loading = false
+    }
+
+    private func reloadCurrent() async {
+        items = []
+        page = 1
+        hasMore = true
+        error = nil
+        loading = false
+        await load(reset: true)
     }
 
     func search(_ keyword: String) async {

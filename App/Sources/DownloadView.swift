@@ -50,7 +50,8 @@ struct DownloadView: View {
                     Text("保存到 下载/青禾学堂").font(.caption2).foregroundStyle(p.textTertiary)
                 }.padding(.horizontal, 20)
             }
-            .padding(.bottom, 100)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 16)
         }
     }
 

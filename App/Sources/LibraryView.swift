@@ -34,7 +34,8 @@ struct LibraryView: View {
                     ForEach(items) { v in LibraryRow(video: v, manage: manage, selected: $selected) }
                 }
             }
-            .padding(.bottom, 110)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 16)
         }
         .safeAreaInset(edge: .bottom) {
             if manage {

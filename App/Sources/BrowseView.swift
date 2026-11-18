@@ -57,7 +57,8 @@ struct BrowseView: View {
                     }.padding(.horizontal, 20)
                 }
             }
-            .padding(.bottom, 100)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 16)
         }
     }
 }

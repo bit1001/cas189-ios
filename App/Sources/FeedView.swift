@@ -17,7 +17,8 @@ struct FeedView: View {
                 sectionChips
                 content
             }
-            .padding(.bottom, 100)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 16)
         }
         .searchable(text: $query, prompt: "搜索片名或标签")
         .onSubmit(of: .search) { Task { await store.search(query) } }
@@ -136,7 +137,10 @@ struct FeedView: View {
                 }
             }
             .padding(.horizontal, 20)
+            .padding(.vertical, 4)
         }
+        .frame(height: 48)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
