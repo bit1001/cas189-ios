@@ -161,7 +161,8 @@ struct VideoCard: View {
                 // placeholder + `.aspectRatio(.fill)`, so without a concrete height
                 // it expands to fill the entire screen. A fixed height cuts that off.
                 CoverImage(path: video.cover, rc4: video.site == "douyin")
-                    .frame(maxWidth: .infinity, height: coverHeight)
+                    .frame(height: coverHeight)
+                    .frame(maxWidth: .infinity)
                     .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 if let d = video.durationText {
