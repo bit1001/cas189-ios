@@ -153,8 +153,11 @@ struct VideoCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .bottomTrailing) {
+                // Use `.fit` with an explicit width: in a vertical ScrollView the
+                // height proposal is .infinity, so `.fill` makes the cover grow to
+                // fill the whole screen. `.fit` derives height from the finite width.
                 CoverImage(path: video.cover, rc4: video.site == "douyin")
-                    .aspectRatio(16/9, contentMode: .fill)
+                    .aspectRatio(16/9, contentMode: .fit)
                     .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 if let d = video.durationText {
