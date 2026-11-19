@@ -77,7 +77,9 @@ struct FeedView: View {
 
     @ViewBuilder
     private func cardCell(_ v: SiteVideo) -> some View {
-        NavigationLink(value: v) { VideoCard(video: v) }
+        NavigationLink(value: v) {
+            VideoCard(video: v, coverHeight: isGrid ? 100 : 200)
+        }
             .buttonStyle(.plain)
             .onAppear {
                 if v.uid == store.items.last?.uid, store.hasMore {
@@ -147,18 +149,20 @@ struct FeedView: View {
 /// Apple-glass video card: cover 16:9, duration badge, title, views, favorite.
 struct VideoCard: View {
     let video: SiteVideo
+    var coverHeight: CGFloat = 200
     @EnvironmentObject private var store: Store
     @Environment(\.palette) private var p
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .bottomTrailing) {
-                // Use `.fit` with an explicit width: in a vertical ScrollView the
-                // height proposal is .infinity, so `.fill` makes the cover grow to
-                // fill the whole screen. `.fit` derives height from the finite width.
+                // An EXPLICIT height is mandatory. Inside a vertical ScrollView the
+                // height proposal is .infinity; CoverImage contains a greedy Color
+                // placeholder + `.aspectRatio(.fill)`, so without a concrete height
+                // it expands to fill the entire screen. A fixed height cuts that off.
                 CoverImage(path: video.cover, rc4: video.site == "douyin")
-                    .aspectRatio(16/9, contentMode: .fit)
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, height: coverHeight)
+                    .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 if let d = video.durationText {
                     Text(d).font(.caption2.monospacedDigit())
